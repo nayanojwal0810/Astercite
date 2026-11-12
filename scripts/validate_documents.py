@@ -398,8 +398,7 @@ def validate_single_document(
     # S05 section body
     s05_text = section_bodies[4]
 
-    # Map protected document IDs required by canonical facts to their approved sections
-    allowed_fact_sections = {}
+    # Map protected document IDs required by canonical facts to their authorizing fact_id and section_id
     doc_outline = outlines.get(expected_doc_id, {})
     fact_to_section = {}
     for sec in doc_outline.get("sections", []):
@@ -407,12 +406,13 @@ def validate_single_document(
         for fid in sec.get("fact_ids", []):
             fact_to_section[fid] = s_id
 
+    authorized_prot_facts = {}
     for fid, f_meta in facts.get(expected_doc_id, {}).items():
         val = f_meta.get("exact_value", "") or ""
         sec_id = fact_to_section.get(fid)
         if sec_id:
             for p_id in re.findall(r"[A-Z]{2,3}-\d{3}", val):
-                allowed_fact_sections.setdefault(p_id, set()).add(sec_id)
+                authorized_prot_facts.setdefault(p_id, {})[sec_id] = fid
 
     # Check for exposure of protected document IDs across sections and preamble
     preamble = raw_sections[0] if raw_sections else ""
@@ -426,10 +426,29 @@ def validate_single_document(
         current_sec_id = sec_meta["section_id"]
         for prot_id in protected_titles:
             if prot_id in sec_body:
-                if current_sec_id not in allowed_fact_sections.get(prot_id, set()):
+                if current_sec_id not in authorized_prot_facts.get(prot_id, {}):
                     errors.append(
                         f"Document {expected_doc_id} exposes protected document ID '{prot_id}' in section {current_sec_id}"
                     )
+                else:
+                    auth_fid = authorized_prot_facts[prot_id][current_sec_id]
+                    m = re.search(rf"<!--\s*fact_id:\s*{re.escape(auth_fid)}\s*-->", sec_body)
+                    if not m:
+                        errors.append(
+                            f"Document {expected_doc_id} missing fact marker {auth_fid} in section {current_sec_id}"
+                        )
+                    else:
+                        pre_marker = sec_body[:m.start()]
+                        if prot_id in pre_marker:
+                            errors.append(
+                                f"Document {expected_doc_id} exposes protected document ID '{prot_id}' outside authorized factual paragraph in section {current_sec_id}"
+                            )
+                        after_marker = sec_body[m.end():].lstrip("\r\n")
+                        para_split = re.split(r"\r?\n\s*\r?\n", after_marker, maxsplit=1)
+                        if len(para_split) > 1 and prot_id in para_split[1]:
+                            errors.append(
+                                f"Document {expected_doc_id} exposes protected document ID '{prot_id}' outside authorized factual paragraph in section {current_sec_id}"
+                            )
 
     # 6. Document references, coverage, and relationship direction checks
     all_doc_ids = set(inventory.keys())
@@ -532,8 +551,9 @@ def validate_documents(
             rel_path = file_path.relative_to(source_dir) if file_path.is_relative_to(source_dir) else file_path
             errors.append(f"Missing source document: {rel_path}")
 
-    # 2. Check for unexpected Markdown files
-    all_md_files = list(source_dir.glob("**/*.md"))
+    # 2. Check for unexpected Markdown files (.md and .markdown)
+    found_files = set(source_dir.glob("**/*.md")) | set(source_dir.glob("**/*.markdown"))
+    all_md_files = sorted(found_files, key=lambda p: str(p))
     expected_path_set = {p.resolve() for p in expected_files.values()}
 
     for md_file in all_md_files:

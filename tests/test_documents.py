@@ -575,6 +575,89 @@ class TestDocuments(unittest.TestCase):
             "ITS-002 Purpose and Scope must not claim team leads have reading permission",
         )
 
+    def test_39_unexpected_markdown_file_extension_rejected(self):
+        """39. An unexpected source document with .markdown extension is rejected."""
+        temp_source = self._create_temp_source()
+        extra_file = temp_source / "engineering" / "extra_document.markdown"
+        extra_file.write_text("# Extra Markdown Doc\n", encoding="utf-8")
+
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("Unexpected source document" in err and "extra_document.markdown" in err for err in errors),
+            f"Expected unexpected source document error for extra_document.markdown, got: {errors}",
+        )
+
+    def test_40_hr001_leave_request_no_portal_mandate(self):
+        """40. HR-001 preserves 3-business-day advance deadline and does not require an HR portal."""
+        content = (self.source_dir / "people_operations" / "hr_001.md").read_text(encoding="utf-8")
+        match = re.search(r"## Leave Request Process\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
+        self.assertIsNotNone(match, "HR-001 missing Leave Request Process section")
+        sec_text = match.group(1)
+
+        self.assertIn("3 business days", sec_text, "HR-001 must preserve 3-business-day advance requirement")
+        self.assertNotIn("human resources portal", sec_text.lower(), "HR-001 must not require an HR portal")
+        self.assertNotIn("hr portal", sec_text.lower(), "HR-001 must not require an HR portal")
+        self.assertNotIn("portal", sec_text.lower(), "HR-001 must not require a portal")
+
+    def test_41_hr004_reimbursement_no_proof_of_completion_requirement(self):
+        """41. HR-004 preserves 30-calendar-day claim deadline without requiring proof of completion."""
+        content = (self.source_dir / "people_operations" / "hr_004.md").read_text(encoding="utf-8")
+        match = re.search(r"## Reimbursement Claim Deadline\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
+        self.assertIsNotNone(match, "HR-004 missing Reimbursement Claim Deadline section")
+        sec_text = match.group(1)
+
+        self.assertIn("30 calendar days", sec_text, "HR-004 must preserve 30-calendar-day claim deadline")
+        self.assertNotIn("proof of", sec_text.lower(), "HR-004 must not require proof of completion")
+        self.assertNotIn("certificate", sec_text.lower(), "HR-004 must not require completion certificates")
+
+    def test_42_ops004_expense_claim_no_portal_mandate(self):
+        """42. OPS-004 preserves 30-calendar-day deadline without requiring an enterprise expense portal."""
+        content = (self.source_dir / "finance_operations" / "ops_004.md").read_text(encoding="utf-8")
+        match = re.search(r"## Expense Claim Deadline\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
+        self.assertIsNotNone(match, "OPS-004 missing Expense Claim Deadline section")
+        sec_text = match.group(1)
+
+        self.assertIn("30 calendar days", sec_text, "OPS-004 must preserve 30-calendar-day deadline")
+        self.assertNotIn("enterprise expense portal", sec_text.lower(), "OPS-004 must not require expense portal")
+        self.assertNotIn("portal", sec_text.lower(), "OPS-004 must not require a portal")
+
+    def test_43_protected_id_outside_authorized_factual_paragraph_rejected(self):
+        """43. Reject protected document ID when placed in an unauthorized paragraph within an approved section."""
+        # 1. Original document passes validation
+        orig_errors = validate_documents(self.source_dir, self.spec_dir)
+        self.assertEqual(orig_errors, [])
+
+        ops_005_path = self.source_dir / "finance_operations" / "ops_005.md"
+        orig_content = ops_005_path.read_text(encoding="utf-8")
+
+        # 2. Confirm OPS-002 appears in the authorized factual paragraph following OPS005_F03
+        s04_match = re.search(r"<!--\s*fact_id:\s*OPS005_F03\s*-->\n(.*?)(?=\n\s*\n|\n## |\Z)", orig_content, re.DOTALL)
+        self.assertIsNotNone(s04_match, "OPS-005 S04 must contain factual paragraph after OPS005_F03")
+        self.assertIn("OPS-002", s04_match.group(1), "Authorized factual paragraph must contain OPS-002")
+
+        # 3. Create temporary copy and add a separate, unauthorized paragraph mentioning OPS-002 in S04
+        temp_source = self._create_temp_source()
+        temp_ops_005 = temp_source / "finance_operations" / "ops_005.md"
+
+        extra_paragraph = "\n\nAdditional unauthorized paragraph referencing OPS-002 procurement rules."
+        mutated_content = orig_content.replace(
+            "Routing procurement requests through approved purchasing channels ensures proper financial oversight.",
+            "Routing procurement requests through approved purchasing channels ensures proper financial oversight." + extra_paragraph,
+        )
+        temp_ops_005.write_text(mutated_content, encoding="utf-8")
+
+        # 4. Confirm validation rejects the additional reference
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("OPS-005" in err and "OPS-002" in err and "outside authorized factual paragraph" in err for err in errors),
+            f"Expected outside authorized factual paragraph error, got: {errors}",
+        )
+
+        # 5. Restore unchanged source and confirm validation passes
+        temp_ops_005.write_text(orig_content, encoding="utf-8")
+        clean_errors = validate_documents(temp_source, self.spec_dir)
+        self.assertEqual(clean_errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()
