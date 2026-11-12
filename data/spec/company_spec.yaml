@@ -1,0 +1,61 @@
+company_name: Aster Systems
+company_type: Fictional B2B software company
+description: Aster Systems develops and maintains business software used by other organizations.
+primary_location: Bengaluru, India
+time_zone: Asia/Kolkata
+currency: INR
+
+departments:
+  - engineering
+  - it_support
+  - people_operations
+  - finance_operations
+
+roles:
+  - employee
+  - engineer
+  - it_support
+  - hr_staff
+  - finance_staff
+  - team_lead
+  - document_admin
+
+services:
+  - id: svc-portal
+    name: Platform Team
+  - id: svc-auth
+    name: Identity Team
+  - id: svc-billing
+    name: Payments Team
+  - id: svc-notify
+    name: Messaging Team
+
+planned_revisions:
+  - document_id: ENG-003
+    base_version: v1
+    target_version: v2
+    changes:
+      - fact_id: ENG003_F03
+        old_value: "error_rate_gt_5_percent_for_10_minutes"
+        new_value: "error_rate_gt_4_percent_for_10_minutes"
+        unit: ""
+  - document_id: HR-001
+    base_version: v1
+    target_version: v2
+    changes:
+      - fact_id: HR001_F01
+        old_value: "18"
+        new_value: "20"
+        unit: "days_per_year"
+  - document_id: OPS-002
+    base_version: v1
+    target_version: v2
+    changes:
+      - fact_id: OPS002_F01
+        old_value: "25000"
+        new_value: "30000"
+        unit: "inr"
+      - fact_id: OPS002_F02
+        old_value: "above_25000_through_100000"
+        new_value: "above_30000_through_100000"
+        unit: ""

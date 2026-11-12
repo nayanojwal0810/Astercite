@@ -1,0 +1,599 @@
+- document_id: ENG-001
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: P1 Incident Acknowledgment
+      fact_ids:
+        - ENG001_F01
+    - section_id: S03
+      title: P2 Incident Acknowledgment
+      fact_ids:
+        - ENG001_F02
+    - section_id: S04
+      title: P1 Postmortem Requirements
+      fact_ids:
+        - ENG001_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ENG-002
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Handover Schedule
+      fact_ids:
+        - ENG002_F01
+    - section_id: S03
+      title: Handover Time
+      fact_ids:
+        - ENG002_F02
+    - section_id: S04
+      title: Required Handover Information
+      fact_ids:
+        - ENG002_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ENG-003
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Standard Deployment Days
+      fact_ids:
+        - ENG003_F01
+    - section_id: S03
+      title: Deployment Window
+      fact_ids:
+        - ENG003_F02
+    - section_id: S04
+      title: Rollback Conditions
+      fact_ids:
+        - ENG003_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ENG-004
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: High-Risk Change Approval
+      fact_ids:
+        - ENG004_F01
+    - section_id: S03
+      title: Migration Change Freeze
+      fact_ids:
+        - ENG004_F02
+    - section_id: S04
+      title: Emergency Change Approval
+      fact_ids:
+        - ENG004_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ENG-005
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: E1001 Authentication Error
+      fact_ids:
+        - ENG005_F01
+    - section_id: S03
+      title: E2003 Retry Procedure
+      fact_ids:
+        - ENG005_F02
+    - section_id: S04
+      title: E3002 Billing Error
+      fact_ids:
+        - ENG005_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ENG-006
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Portal Service Ownership
+      fact_ids:
+        - ENG006_F01
+    - section_id: S03
+      title: Authentication Service Ownership
+      fact_ids:
+        - ENG006_F02
+    - section_id: S04
+      title: Billing Service Ownership
+      fact_ids:
+        - ENG006_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-001
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Standard Laptop Provisioning
+      fact_ids:
+        - ITS001_F01
+    - section_id: S03
+      title: Urgent Laptop Replacement
+      fact_ids:
+        - ITS001_F02
+    - section_id: S04
+      title: Equipment Purchase Policies
+      fact_ids:
+        - ITS001_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-002
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: New Account Requests
+      fact_ids:
+        - ITS002_F01
+    - section_id: S03
+      title: Employee Exit and Access Deactivation
+      fact_ids:
+        - ITS002_F02
+    - section_id: S04
+      title: Account Request Approval
+      fact_ids:
+        - ITS002_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-003
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: MFA Reset Verification
+      fact_ids:
+        - ITS003_F01
+    - section_id: S03
+      title: MFA Reset Resolution
+      fact_ids:
+        - ITS003_F02
+    - section_id: S04
+      title: Prohibited Reset Practices
+      fact_ids:
+        - ITS003_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-004
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Software Request Approval
+      fact_ids:
+        - ITS004_F01
+    - section_id: S03
+      title: Unlisted Software Review
+      fact_ids:
+        - ITS004_F02
+    - section_id: S04
+      title: Standard Request Processing
+      fact_ids:
+        - ITS004_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-005
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Lost Device Reporting
+      fact_ids:
+        - ITS005_F01
+    - section_id: S03
+      title: Device Access Protection
+      fact_ids:
+        - ITS005_F02
+    - section_id: S04
+      title: Required Incident Records
+      fact_ids:
+        - ITS005_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: ITS-006
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: P1 Ticket Response
+      fact_ids:
+        - ITS006_F01
+    - section_id: S03
+      title: P2 Ticket Response
+      fact_ids:
+        - ITS006_F02
+    - section_id: S04
+      title: P3 Ticket Response
+      fact_ids:
+        - ITS006_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-001
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Annual Leave Entitlement
+      fact_ids:
+        - HR001_F01
+    - section_id: S03
+      title: Sick Leave Entitlement
+      fact_ids:
+        - HR001_F02
+    - section_id: S04
+      title: Leave Request Process
+      fact_ids:
+        - HR001_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-002
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Office Attendance Requirements
+      fact_ids:
+        - HR002_F01
+    - section_id: S03
+      title: Remote Work Exceptions
+      fact_ids:
+        - HR002_F02
+    - section_id: S04
+      title: Remote Work Equipment
+      fact_ids:
+        - HR002_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-003
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Onboarding Preparation
+      fact_ids:
+        - HR003_F01
+    - section_id: S03
+      title: Account Provisioning
+      fact_ids:
+        - HR003_F02
+    - section_id: S04
+      title: Laptop Provisioning
+      fact_ids:
+        - HR003_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-004
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Training Reimbursement Limit
+      fact_ids:
+        - HR004_F01
+    - section_id: S03
+      title: Training Approval
+      fact_ids:
+        - HR004_F02
+    - section_id: S04
+      title: Reimbursement Claim Deadline
+      fact_ids:
+        - HR004_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-005
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Performance Review Schedule
+      fact_ids:
+        - HR005_F01
+    - section_id: S03
+      title: Goal Submission
+      fact_ids:
+        - HR005_F02
+    - section_id: S04
+      title: Review Document Access
+      fact_ids:
+        - HR005_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: HR-006
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Grievance Acknowledgment
+      fact_ids:
+        - HR006_F01
+    - section_id: S03
+      title: Grievance Appeals
+      fact_ids:
+        - HR006_F02
+    - section_id: S04
+      title: Private Grievance Case Access
+      fact_ids:
+        - HR006_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-001
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Domestic Travel Allowance
+      fact_ids:
+        - OPS001_F01
+    - section_id: S03
+      title: Travel Booking Approval
+      fact_ids:
+        - OPS001_F02
+    - section_id: S04
+      title: Travel Expense Claims
+      fact_ids:
+        - OPS001_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-002
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Team Lead Purchase Approval
+      fact_ids:
+        - OPS002_F01
+    - section_id: S03
+      title: Finance Purchase Approval
+      fact_ids:
+        - OPS002_F02
+    - section_id: S04
+      title: High-Value Purchase Approval
+      fact_ids:
+        - OPS002_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-003
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Vendor Onboarding Timeline
+      fact_ids:
+        - OPS003_F01
+    - section_id: S03
+      title: Required Vendor Documents
+      fact_ids:
+        - OPS003_F02
+    - section_id: S04
+      title: First Purchase Approval
+      fact_ids:
+        - OPS003_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-004
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Expense Claim Deadline
+      fact_ids:
+        - OPS004_F01
+    - section_id: S03
+      title: Receipt Requirements
+      fact_ids:
+        - OPS004_F02
+    - section_id: S04
+      title: Finance Review Timeline
+      fact_ids:
+        - OPS004_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-005
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Asset Register Ownership
+      fact_ids:
+        - OPS005_F01
+    - section_id: S03
+      title: Equipment Return
+      fact_ids:
+        - OPS005_F02
+    - section_id: S04
+      title: New Equipment Purchases
+      fact_ids:
+        - OPS005_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []
+
+- document_id: OPS-006
+  document_version: v1
+  sections:
+    - section_id: S01
+      title: Purpose and Scope
+      fact_ids: []
+    - section_id: S02
+      title: Continuity Testing
+      fact_ids:
+        - OPS006_F01
+    - section_id: S03
+      title: Critical Service Recovery
+      fact_ids:
+        - OPS006_F02
+    - section_id: S04
+      title: Continuity Escalation
+      fact_ids:
+        - OPS006_F03
+    - section_id: S05
+      title: Exceptions and Related Documents
+      fact_ids: []
+    - section_id: S06
+      title: Revision History
+      fact_ids: []

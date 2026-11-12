@@ -1,0 +1,13 @@
+from_doc,to_doc,relationship,explanation
+ITS-001,OPS-005,asset_ownership_reference,laptop replacement follows asset ownership rules.
+OPS-005,OPS-002,approval_limits_reference,equipment purchases follow approval limits.
+ENG-001,ENG-002,handover_followup_reference,incident follow-up is included in on-call handover.
+ENG-002,ENG-006,service_escalation_reference,escalation uses the service ownership directory.
+HR-003,ITS-002,account_provisioning_reference,onboarding requires account provisioning.
+ITS-002,ITS-001,laptop_provisioning_reference,onboarding account work connects to laptop provisioning.
+HR-002,ITS-004,software_request_reference,remote work software follows the software request process.
+ITS-004,OPS-005,asset_ownership_reference,approved equipment and software assets follow ownership rules.
+OPS-001,OPS-004,claim_submission_reference,travel expenses follow the claim submission process.
+OPS-004,OPS-002,purchase_approval_reference,expenses requiring purchase approval follow approval limits.
+ENG-003,ENG-004,change_approval_reference,deployments follow change approval requirements.
+HR-004,OPS-004,expense_claim_reference,training reimbursement claims use the expense claim process.

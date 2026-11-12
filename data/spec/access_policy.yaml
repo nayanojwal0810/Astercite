@@ -1,0 +1,200 @@
+default_access: deny
+
+admin_role: document_admin
+admin_permissions:
+  - upload
+  - revise
+  - archive
+  - delete
+  - change_access_rules
+
+rules:
+  default_rule: "Explicit read permissions required. Default deny."
+  admin_rule: "document_admin manages documents but does not automatically grant read access to restricted content."
+  cross_document_rule: "Cross-document references do not grant read access to referenced documents."
+  team_lead_scope_rule: "team_lead role requires matching team_lead_departments for department and restricted documents."
+
+documents:
+  ENG-001:
+    allowed_roles:
+      - engineer
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ENG-002:
+    allowed_roles:
+      - engineer
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ENG-003:
+    allowed_roles:
+      - engineer
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ENG-004:
+    allowed_roles:
+      - engineer
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ENG-005:
+    allowed_roles:
+      - engineer
+      - it_support
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ENG-006:
+    allowed_roles:
+      - team_lead
+    team_lead_departments:
+      - engineering
+  ITS-001:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  ITS-002:
+    allowed_roles:
+      - it_support
+      - hr_staff
+    team_lead_departments: []
+  ITS-003:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  ITS-004:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  ITS-005:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  ITS-006:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  HR-001:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  HR-002:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  HR-003:
+    allowed_roles:
+      - hr_staff
+      - it_support
+      - team_lead
+    team_lead_departments:
+      - people_operations
+  HR-004:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  HR-005:
+    allowed_roles:
+      - hr_staff
+      - team_lead
+    team_lead_departments:
+      - people_operations
+  HR-006:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  OPS-001:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  OPS-002:
+    allowed_roles:
+      - finance_staff
+      - team_lead
+    team_lead_departments:
+      - finance_operations
+  OPS-003:
+    allowed_roles:
+      - finance_staff
+      - team_lead
+    team_lead_departments:
+      - finance_operations
+  OPS-004:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  OPS-005:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []
+  OPS-006:
+    allowed_roles:
+      - employee
+      - engineer
+      - it_support
+      - hr_staff
+      - finance_staff
+      - team_lead
+    team_lead_departments: []

@@ -1,0 +1,25 @@
+document_id,title,owner_department,classification,allowed_roles,team_lead_departments,related_documents,planned_versions,active_version,source_type
+ENG-001,Production Incident Severity & Escalation Policy,engineering,department,engineer|team_lead,engineering,ENG-002,v1,v1,synthetic
+ENG-002,On-call Handover Guide,engineering,department,engineer|team_lead,engineering,ENG-001|ENG-006,v1,v1,synthetic
+ENG-003,Deployment & Rollback Procedure,engineering,department,engineer|team_lead,engineering,ENG-004,v1|v2,v1,synthetic
+ENG-004,Change Approval Checklist,engineering,department,engineer|team_lead,engineering,ENG-003,v1,v1,synthetic
+ENG-005,Troubleshooting Known Error Codes,engineering,department,engineer|it_support|team_lead,engineering,,v1,v1,synthetic
+ENG-006,Service Ownership & Escalation Directory,engineering,restricted,team_lead,engineering,ENG-002,v1,v1,synthetic
+ITS-001,Laptop Provisioning and Replacement,it_support,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,ITS-002|OPS-005,v1,v1,synthetic
+ITS-002,Account Provisioning / Deprovisioning,it_support,restricted,it_support|hr_staff,,HR-003|ITS-001,v1,v1,synthetic
+ITS-003,MFA and Password Reset Procedure,it_support,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1,v1,synthetic
+ITS-004,Approved Software Request Process,it_support,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,HR-002|OPS-005,v1,v1,synthetic
+ITS-005,Device Loss or Theft Response,it_support,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1,v1,synthetic
+ITS-006,IT Support Ticket Priorities and SLAs,it_support,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1,v1,synthetic
+HR-001,Leave and Attendance Policy,people_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1|v2,v1,synthetic
+HR-002,Remote and Hybrid Work Policy,people_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,ITS-004,v1,v1,synthetic
+HR-003,Employee Onboarding Process,people_operations,department,hr_staff|it_support|team_lead,people_operations,ITS-002,v1,v1,synthetic
+HR-004,Learning and Training Reimbursement,people_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,OPS-004,v1,v1,synthetic
+HR-005,Performance Review Process,people_operations,restricted,hr_staff|team_lead,people_operations,,v1,v1,synthetic
+HR-006,Grievance and Escalation Procedure,people_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1,v1,synthetic
+OPS-001,Travel Reimbursement Policy,finance_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,OPS-004,v1,v1,synthetic
+OPS-002,Purchase Approval Limits,finance_operations,department,finance_staff|team_lead,finance_operations,OPS-004|OPS-005,v1|v2,v1,synthetic
+OPS-003,Vendor Onboarding Checklist,finance_operations,department,finance_staff|team_lead,finance_operations,,v1,v1,synthetic
+OPS-004,Expense Claim Submission Process,finance_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,HR-004|OPS-001|OPS-002,v1,v1,synthetic
+OPS-005,Asset Procurement and Ownership,finance_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,ITS-001|ITS-004|OPS-002,v1,v1,synthetic
+OPS-006,Business Continuity & Facilities Procedure,finance_operations,general,employee|engineer|it_support|hr_staff|finance_staff|team_lead,,,v1,v1,synthetic
