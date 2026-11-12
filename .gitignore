@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+
+# Local databases and generated storage
+*.db
+*.sqlite
+*.sqlite3
+data/
+storage/
+chroma/
+lancedb/
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Downloaded model weights
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.onnx
+models/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Streamlit secrets and config
+.streamlit/secrets.toml
+
+# Testing and coverage caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Operating system temporary files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
