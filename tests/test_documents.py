@@ -1,11 +1,13 @@
 """Test suite for Aster Systems original v1 Markdown knowledge documents.
 
 Validates all 24 knowledge documents, metadata, section structure, fact placement,
-YAML date handling, relationship directions, and access-control leak prevention.
+YAML date handling, relationship directions, raw token detection, receipt threshold rules,
+access-control leak prevention, and relationship coverage preservation.
 """
 
 import datetime
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -13,7 +15,8 @@ import unittest
 
 # Ensure project root is in python path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.validate_documents import (
     load_specifications,
@@ -96,7 +99,6 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        # Remove S04 section
         s04_idx = content.find("## P1 Postmortem Requirements")
         s05_idx = content.find("## Exceptions and Related Documents")
         new_content = content[:s04_idx] + content[s05_idx:]
@@ -120,7 +122,6 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        # Replace F02 marker with F01 marker to create duplicate
         doc_path.write_text(content.replace("fact_id: ENG001_F02", "fact_id: ENG001_F01"), encoding="utf-8")
 
         errors = validate_documents(temp_source, self.spec_dir)
@@ -131,7 +132,6 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        # Remove F01 marker
         doc_path.write_text(content.replace("<!-- fact_id: ENG001_F01 -->", ""), encoding="utf-8")
 
         errors = validate_documents(temp_source, self.spec_dir)
@@ -142,7 +142,6 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        # Swap F01 and F02 markers
         content = content.replace("fact_id: ENG001_F01", "fact_id: TEMP_F")
         content = content.replace("fact_id: ENG001_F02", "fact_id: ENG001_F01")
         content = content.replace("fact_id: TEMP_F", "fact_id: ENG001_F02")
@@ -166,7 +165,6 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        # Empty S01 section body
         s01_heading = "## Purpose and Scope\n"
         s02_heading = "\n## P1 Incident Acknowledgment"
         s01_idx = content.find(s01_heading)
@@ -190,7 +188,6 @@ class TestDocuments(unittest.TestCase):
     def test_15_restricted_title_copied_into_lower_access_doc_rejected(self):
         """15. A restricted document title copied into a lower-access source document is rejected."""
         temp_source = self._create_temp_source()
-        # ITS-004 is general; HR-005 is restricted ('Performance Review Process')
         doc_path = temp_source / "it_support" / "its_004.md"
         content = doc_path.read_text(encoding="utf-8")
         leak_text = "\nThis software catalog is referenced in the Performance Review Process for evaluating goals.\n"
@@ -243,7 +240,6 @@ class TestDocuments(unittest.TestCase):
 
     def test_21_approved_outgoing_reference_accepted(self):
         """21. An approved outgoing reference is accepted."""
-        # ENG-001 has approved outgoing reference to ENG-002
         errors = validate_documents(self.source_dir, self.spec_dir)
         eng_001_errs = [e for e in errors if "ENG-001" in e and "ENG-002" in e]
         self.assertEqual(eng_001_errs, [])
@@ -251,11 +247,10 @@ class TestDocuments(unittest.TestCase):
     def test_22_reversed_or_unapproved_outgoing_workflow_rejected(self):
         """22. A reversed or unapproved outgoing workflow reference is rejected."""
         temp_source = self._create_temp_source()
-        # ENG-002 receives from ENG-001; reverse it by phrasing ENG-001 as an outgoing dependency of ENG-002
         doc_path = temp_source / "engineering" / "eng_002.md"
         content = doc_path.read_text(encoding="utf-8")
-        s05_heading = "## Exceptions and Related Documents\n\n"
-        reversed_text = "This on-call rotation depends on ENG-001 for all incident approvals.\n\n"
+        s05_heading = "## Exceptions and Related Documents\n"
+        reversed_text = "This on-call rotation depends on ENG-001 for all incident approvals.\n"
         new_content = content.replace(s05_heading, s05_heading + reversed_text)
         doc_path.write_text(new_content, encoding="utf-8")
 
@@ -264,7 +259,6 @@ class TestDocuments(unittest.TestCase):
 
     def test_23_valid_incoming_relationship_description_accepted(self):
         """23. A valid incoming relationship description is not incorrectly treated as an outgoing dependency."""
-        # ENG-002 receives from ENG-001 and describes it as incoming follow-up items
         errors = validate_documents(self.source_dir, self.spec_dir)
         eng_002_errs = [e for e in errors if "ENG-002" in e and "ENG-001" in e]
         self.assertEqual(eng_002_errs, [])
@@ -274,8 +268,8 @@ class TestDocuments(unittest.TestCase):
         temp_source = self._create_temp_source()
         doc_path = temp_source / "engineering" / "eng_001.md"
         content = doc_path.read_text(encoding="utf-8")
-        s05_heading = "## Exceptions and Related Documents\n\n"
-        unrelated_text = "Operational leave policies are handled under HR-001.\n\n"
+        s05_heading = "## Exceptions and Related Documents\n"
+        unrelated_text = "Operational leave policies are handled under HR-001.\n"
         new_content = content.replace(s05_heading, s05_heading + unrelated_text)
         doc_path.write_text(new_content, encoding="utf-8")
 
@@ -284,7 +278,6 @@ class TestDocuments(unittest.TestCase):
 
     def test_25_approved_canonical_fact_containing_protected_id_accepted(self):
         """25. An approved canonical fact containing a protected document ID is accepted."""
-        # OPS-005 contains canonical fact OPS005_F03 referencing OPS-002 (department classification)
         errors = validate_documents(self.source_dir, self.spec_dir)
         ops_005_errs = [e for e in errors if "OPS-005" in e and "OPS-002" in e]
         self.assertEqual(ops_005_errs, [])
@@ -292,8 +285,6 @@ class TestDocuments(unittest.TestCase):
     def test_26_protected_document_full_title_rejected_when_exposed(self):
         """26. A protected document's full title is rejected when exposed to readers without permission."""
         temp_source = self._create_temp_source()
-        # ENG-002 is accessible to engineers; ENG-006 is restricted to engineering team leads
-        # Inserting ENG-006's title 'Service Ownership & Escalation Directory' into ENG-002 must fail
         doc_path = temp_source / "engineering" / "eng_002.md"
         content = doc_path.read_text(encoding="utf-8")
         leak_text = "\nEngineers should consult the Service Ownership & Escalation Directory for service contacts.\n"
@@ -305,7 +296,6 @@ class TestDocuments(unittest.TestCase):
     def test_27_direct_markdown_link_to_restricted_source_file_rejected(self):
         """27. A general document cannot expose restricted information through a direct Markdown link to a source file."""
         temp_source = self._create_temp_source()
-        # OPS-005 is general; insert direct Markdown link to ops_002.md
         doc_path = temp_source / "finance_operations" / "ops_005.md"
         content = doc_path.read_text(encoding="utf-8")
         link_text = "\nFor purchase thresholds, see [Purchase Limits](../finance_operations/ops_002.md).\n"
@@ -313,6 +303,110 @@ class TestDocuments(unittest.TestCase):
 
         errors = validate_documents(temp_source, self.spec_dir)
         self.assertTrue(any("contains forbidden direct Markdown link to source document" in err for err in errors))
+
+    # --- New tests required by Section 11 ---
+
+    def test_28_raw_registry_tokens_rejected_in_visible_prose(self):
+        """28. Raw database-style snake_case tokens in visible prose are rejected with document ID and token name."""
+        tokens_to_test = ["business_days", "team_lead", "above_25000_through_100000"]
+        for token in tokens_to_test:
+            with self.subTest(token=token):
+                temp_source = self._create_temp_source()
+                doc_path = temp_source / "engineering" / "eng_001.md"
+                content = doc_path.read_text(encoding="utf-8")
+                # Insert token into visible paragraph
+                mutated = content.replace("within 10 minutes", f"within 10 {token}")
+                doc_path.write_text(mutated, encoding="utf-8")
+
+                errors = validate_documents(temp_source, self.spec_dir)
+                self.assertTrue(
+                    any("ENG-001" in err and f"raw registry token '{token}'" in err for err in errors),
+                    f"Expected error identifying ENG-001 and token '{token}', got: {errors}",
+                )
+
+    def test_29_valid_identifiers_remain_accepted(self):
+        """29. Fact-marker comments, document IDs, service IDs, and YAML fields do not trigger the raw token rule."""
+        # Confirm that the complete corrected source document collection has 0 raw token errors
+        errors = validate_documents(self.source_dir, self.spec_dir)
+        token_errors = [e for e in errors if "raw registry token" in e]
+        self.assertEqual(token_errors, [])
+
+    def test_30_correct_receipt_threshold_ops_004(self):
+        """30. Verify that OPS-004 uses the approved strict threshold 'above INR 500' and lacks 'equal to or exceeding'."""
+        ops_004_path = self.source_dir / "finance_operations" / "ops_004.md"
+        content = ops_004_path.read_text(encoding="utf-8")
+
+        s03_match = re.search(r"## Receipt Requirements\s+(.*?)\s+## Finance Review Timeline", content, re.DOTALL)
+        self.assertIsNotNone(s03_match)
+        s03_text = s03_match.group(1)
+
+        # Confirm strict 'above INR 500' exists
+        self.assertTrue(
+            bool(re.search(r"\babove\s+INR\s+500\b", s03_text, re.IGNORECASE)),
+            "OPS-004 S03 must state receipts are required for claims above INR 500",
+        )
+        # Confirm incorrect phrasing is absent
+        forbidden = re.findall(r"\b(equal to or exceeding|at least|500 or more|greater than or equal to)\b", s03_text, re.IGNORECASE)
+        self.assertEqual(forbidden, [], f"OPS-004 S03 contains forbidden phrasing: {forbidden}")
+
+        # Test validator catches forbidden phrasing in temporary copy
+        temp_source = self._create_temp_source()
+        temp_doc = temp_source / "finance_operations" / "ops_004.md"
+        temp_content = temp_doc.read_text(encoding="utf-8")
+        bad_content = temp_content.replace("above INR 500", "equal to or exceeding INR 500")
+        temp_doc.write_text(bad_content, encoding="utf-8")
+
+        temp_errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(any("forbidden receipt threshold phrasing" in err for err in temp_errors))
+
+    def test_31_protected_canonical_references_allowed(self):
+        """31. Confirm approved canonical fact references containing protected IDs remain valid."""
+        # ITS-001 references OPS-002 in ITS001_F03
+        # HR-003 references ITS-002 in HR003_F02
+        # OPS-005 references OPS-002 in OPS005_F03
+        errors = validate_documents(self.source_dir, self.spec_dir)
+        canonical_errors = [
+            e for e in errors
+            if any(p in e for p in ["ITS-001", "HR-003", "OPS-005"])
+            and any(t in e for t in ["OPS-002", "ITS-002"])
+        ]
+        self.assertEqual(canonical_errors, [])
+
+    def test_32_relationship_coverage_preservation(self):
+        """32. Confirm safe outgoing relationship references are required in S05, while protected targets use safe wording."""
+        # ENG-003 has approved outgoing relationship to safe destination ENG-004
+        # Removing ENG-004 from S05 of ENG-003 must be rejected
+        temp_source = self._create_temp_source()
+        eng_003_path = temp_source / "engineering" / "eng_003.md"
+        content = eng_003_path.read_text(encoding="utf-8")
+        mutated = content.replace("ENG-004", "external change guidelines")
+        eng_003_path.write_text(mutated, encoding="utf-8")
+
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("ENG-003 S05 is missing required outgoing relationship reference to ENG-004" in err for err in errors),
+            f"Expected missing outgoing reference error for ENG-004, got: {errors}",
+        )
+
+        # Unchanged original documents pass
+        orig_errors = validate_documents(self.source_dir, self.spec_dir)
+        self.assertEqual(orig_errors, [])
+
+    def test_33_protected_id_in_unrelated_section_rejected(self):
+        """33. Reject protected document IDs exposed in unrelated sections of lower-access documents."""
+        # ENG-002 is accessible to engineers; ENG-006 is restricted to engineering team leads
+        # Inserting ENG-006 into S05 of ENG-002 must be rejected
+        temp_source = self._create_temp_source()
+        eng_002_path = temp_source / "engineering" / "eng_002.md"
+        content = eng_002_path.read_text(encoding="utf-8")
+        mutated = content.replace("restricted service directory", "restricted service directory ENG-006")
+        eng_002_path.write_text(mutated, encoding="utf-8")
+
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("ENG-002" in err and "ENG-006" in err and "protected document ID" in err for err in errors),
+            f"Expected protected document ID error for ENG-006 in ENG-002, got: {errors}",
+        )
 
 
 if __name__ == "__main__":

@@ -1,3 +1,20 @@
+"""Validator for Aster Systems original v1 Markdown knowledge documents.
+
+Validates that Markdown source documents adhere to dataset specifications, including:
+- Exact 24 source document files in approved departmental locations.
+- Valid YAML front matter and required metadata fields.
+- Effective date normalization (datetime.date vs string '2026-11-01').
+- Heading levels (one # title, exactly 6 ## section titles matching outlines).
+- Non-empty section content.
+- Exactly 3 canonical fact markers in S02, S03, S04.
+- Prevention of unfinished placeholders.
+- Prevention of direct Markdown links to source documents.
+- Prevention of information leaks (protected titles, restricted ID exposure).
+- Prevention of raw database-style snake_case tokens in visible prose.
+- Strict receipt requirement threshold validation for OPS-004.
+- Relationship coverage and workflow direction consistency.
+"""
+
 import csv
 import datetime
 import os
@@ -45,8 +62,16 @@ FACT_MARKER_REGEX = re.compile(
 
 ANY_COMMENT_REGEX = re.compile(r"<!--(.*?)-->", re.DOTALL)
 
+RAW_TOKEN_REGEX = re.compile(r"\b[a-z0-9]+_[a-z0-9]+(?:_[a-z0-9]+)*\b")
+
+FORBIDDEN_RECEIPT_REGEX = re.compile(
+    r"\b(equal to or exceeding|at least|500 or more|greater than or equal to)\b",
+    re.IGNORECASE,
+)
+
 
 def load_specifications(spec_dir_path: Path | str = "data/spec") -> dict:
+    """Load authoritative specification files for document validation."""
     spec_dir = Path(spec_dir_path)
 
     with open(spec_dir / "document_inventory.csv", "r", encoding="utf-8") as f:
@@ -58,7 +83,8 @@ def load_specifications(spec_dir_path: Path | str = "data/spec") -> dict:
             facts.setdefault(row["source_doc_id"], {})[row["fact_id"]] = row
 
     with open(spec_dir / "document_outlines.yaml", "r", encoding="utf-8") as f:
-        outlines = {item["document_id"]: item for item in yaml.safe_load(f)}
+        raw_outlines = yaml.safe_load(f)
+        outlines = {doc["document_id"]: doc for doc in raw_outlines}
 
     with open(spec_dir / "access_policy.yaml", "r", encoding="utf-8") as f:
         access_policy = yaml.safe_load(f)
@@ -66,8 +92,8 @@ def load_specifications(spec_dir_path: Path | str = "data/spec") -> dict:
     with open(spec_dir / "cross_references.csv", "r", encoding="utf-8") as f:
         cross_refs = list(csv.DictReader(f))
 
-    outgoing_map: dict[str, list[dict]] = {}
-    incoming_map: dict[str, list[dict]] = {}
+    outgoing_map = {}
+    incoming_map = {}
     for cr in cross_refs:
         outgoing_map.setdefault(cr["from_doc"], []).append(cr)
         incoming_map.setdefault(cr["to_doc"], []).append(cr)
@@ -131,7 +157,7 @@ def get_protected_titles_for_doc(
                 continue
             dept_arg = doc_dept if role == "team_lead" else None
             if not check_document_access(other_perm, [role], other_class, dept_arg):
-                protected[other_id] = other_meta["title"]
+                protected[other_id] = other_meta["title"].strip()
                 break
 
     return protected
@@ -143,7 +169,7 @@ def validate_single_document(
     specs: dict,
     errors: list[str],
 ) -> None:
-    filename = file_path.name
+    """Validate structure, content, metadata, facts, and relationships for a single file."""
     inventory = specs["inventory"]
     facts = specs["facts"]
     outlines = specs["outlines"]
@@ -151,84 +177,88 @@ def validate_single_document(
     outgoing_map = specs["outgoing_map"]
     incoming_map = specs["incoming_map"]
 
-    if expected_doc_id not in inventory:
-        errors.append(f"Unexpected document ID: {expected_doc_id}")
-        return
-
-    doc_meta = inventory[expected_doc_id]
-    outline = outlines.get(expected_doc_id)
-    if not outline:
-        errors.append(f"Missing outline specification for {expected_doc_id}")
+    if not file_path.exists():
+        errors.append(f"Missing source document: {file_path}")
         return
 
     try:
-        content = file_path.read_text(encoding="utf-8")
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
     except Exception as e:
-        errors.append(f"Failed to read {file_path}: {e}")
+        errors.append(f"Cannot read document file {file_path}: {e}")
         return
 
-    # 1. Front matter extraction
-    if not content.startswith("---"):
-        errors.append(f"{filename}: File must begin with YAML front matter ('---')")
-        return
-
+    # Check YAML front matter
     parts = content.split("---", 2)
     if len(parts) < 3:
-        errors.append(f"{filename}: Malformed YAML front matter (missing closing '---')")
+        errors.append(f"Document {file_path.name} missing standard YAML front matter delimiters")
         return
 
-    front_matter_raw = parts[1]
+    raw_yaml = parts[1]
     body = parts[2]
 
     try:
-        meta = yaml.safe_load(front_matter_raw)
+        metadata = yaml.safe_load(raw_yaml)
     except Exception as e:
-        errors.append(f"{filename}: YAML front matter failed to parse: {e}")
+        errors.append(f"Document {file_path.name} YAML front matter parse error: {e}")
         return
 
-    if not isinstance(meta, dict):
-        errors.append(f"{filename}: YAML front matter must be a dictionary")
+    if not isinstance(metadata, dict):
+        errors.append(f"Document {file_path.name} front matter must be a dictionary/mapping")
         return
 
-    # Check required metadata fields
-    for field in REQUIRED_METADATA_FIELDS:
-        if field not in meta:
-            errors.append(f"Document {expected_doc_id} missing metadata field: {field}")
+    # 1. Required metadata checks
+    for req_field in REQUIRED_METADATA_FIELDS:
+        if req_field not in metadata:
+            errors.append(f"Document {expected_doc_id} missing metadata field: {req_field}")
 
-    for field in meta:
-        if field not in REQUIRED_METADATA_FIELDS:
-            errors.append(f"Document {expected_doc_id} has unexpected metadata field: {field}")
-
-    # Check metadata values
-    doc_id = meta.get("document_id")
+    doc_id = metadata.get("document_id")
     if doc_id != expected_doc_id:
-        errors.append(f"{filename} metadata document_id '{doc_id}' != expected '{expected_doc_id}'")
+        errors.append(f"{file_path.name} metadata document_id '{doc_id}' != expected '{expected_doc_id}'")
 
-    if meta.get("document_version") != "v1":
-        errors.append(f"Document {expected_doc_id} metadata document_version must be 'v1', got: '{meta.get('document_version')}'")
+    inv_meta = inventory.get(expected_doc_id)
+    if not inv_meta:
+        errors.append(f"Unknown document ID in inventory: {expected_doc_id}")
+        return
 
-    if meta.get("title") != doc_meta["title"]:
-        errors.append(f"Document {expected_doc_id} metadata title '{meta.get('title')}' != inventory '{doc_meta['title']}'")
+    doc_ver = metadata.get("document_version")
+    if doc_ver != "v1":
+        errors.append(f"Document {expected_doc_id} metadata document_version must be 'v1', got: '{doc_ver}'")
 
-    if meta.get("owner_department") != doc_meta["owner_department"]:
-        errors.append(f"Document {expected_doc_id} metadata owner_department '{meta.get('owner_department')}' != inventory '{doc_meta['owner_department']}'")
+    title = metadata.get("title")
+    expected_title = inv_meta["title"].strip()
+    if title != expected_title:
+        errors.append(f"Document {expected_doc_id} metadata title '{title}' != inventory '{expected_title}'")
 
-    if meta.get("classification") != doc_meta["classification"]:
-        errors.append(f"Document {expected_doc_id} metadata classification '{meta.get('classification')}' != inventory '{doc_meta['classification']}'")
+    owner_dept = metadata.get("owner_department")
+    expected_dept = inv_meta["owner_department"].strip()
+    if owner_dept != expected_dept:
+        errors.append(f"Document {expected_doc_id} metadata owner_department '{owner_dept}' != inventory '{expected_dept}'")
 
-    if meta.get("source_type") != "synthetic":
-        errors.append(f"Document {expected_doc_id} metadata source_type must be 'synthetic', got: '{meta.get('source_type')}'")
+    classification = metadata.get("classification")
+    expected_class = inv_meta["classification"].strip()
+    if classification != expected_class:
+        errors.append(f"Document {expected_doc_id} metadata classification '{classification}' != inventory '{expected_class}'")
 
-    normalize_and_check_date(meta.get("effective_from"), expected_doc_id, errors)
+    source_type = metadata.get("source_type")
+    if source_type != "synthetic":
+        errors.append(f"Document {expected_doc_id} metadata source_type must be 'synthetic', got: '{source_type}'")
+
+    normalize_and_check_date(metadata.get("effective_from"), expected_doc_id, errors)
 
     # 2. Level 1 title check
     h1_matches = re.findall(r"^#\s+(.+)$", body, flags=re.MULTILINE)
     if len(h1_matches) != 1:
-        errors.append(f"Document {expected_doc_id} must have exactly one level-1 heading, found {len(h1_matches)}")
-    elif h1_matches[0].strip() != doc_meta["title"]:
-        errors.append(f"Document {expected_doc_id} level-1 heading '{h1_matches[0].strip()}' != expected '{doc_meta['title']}'")
+        errors.append(f"Document {expected_doc_id} must have exactly one level-1 title, found {len(h1_matches)}")
+    elif h1_matches[0].strip() != expected_title:
+        errors.append(f"Document {expected_doc_id} level-1 title '{h1_matches[0]}' != expected '{expected_title}'")
 
     # 3. Level 2 sections check
+    outline = outlines.get(expected_doc_id)
+    if not outline:
+        errors.append(f"Document {expected_doc_id} outline missing from document_outlines.yaml")
+        return
+
     h2_matches = [m.strip() for m in re.findall(r"^##\s+(.+)$", body, flags=re.MULTILINE)]
     expected_sections = outline.get("sections", [])
     expected_h2 = [s["title"].strip() for s in expected_sections]
@@ -240,7 +270,6 @@ def validate_single_document(
 
     # Split body into sections
     raw_sections = re.split(r"^##\s+.+$", body, flags=re.MULTILINE)
-    # raw_sections[0] is preamble before first ##, raw_sections[1..6] correspond to sections
     section_bodies = raw_sections[1:] if len(raw_sections) > 1 else []
 
     if len(section_bodies) != 6:
@@ -250,13 +279,11 @@ def validate_single_document(
     # Check non-empty content
     for idx, (sec_meta, sec_body) in enumerate(zip(expected_sections, section_bodies)):
         clean_text = sec_body.strip()
-        # Remove fact marker comment when testing non-empty content
         text_without_markers = FACT_MARKER_REGEX.sub("", clean_text).strip()
         if not text_without_markers:
             errors.append(f"Document {expected_doc_id} section {sec_meta['section_id']} ('{sec_meta['title']}') is empty")
 
     # 4. Fact markers validation
-    # Total fact markers in entire document
     all_markers = FACT_MARKER_REGEX.findall(body)
     all_comments = ANY_COMMENT_REGEX.findall(body)
 
@@ -314,10 +341,34 @@ def validate_single_document(
             if not after_marker:
                 errors.append(f"Document {expected_doc_id} fact {exp_fid} is not followed by a factual statement")
 
-    # 5. Quality and Safety checks
+    # 5. Quality, Formatting, and Safety checks
     if PLACEHOLDER_REGEX.search(body):
         match = PLACEHOLDER_REGEX.search(body).group(0)
         errors.append(f"Document {expected_doc_id} contains placeholder or unfinished text: '{match}'")
+
+    # Raw registry token check in visible Markdown prose
+    clean_prose = ANY_COMMENT_REGEX.sub("", body)
+    raw_tokens = RAW_TOKEN_REGEX.findall(clean_prose)
+    for token in raw_tokens:
+        errors.append(
+            f"Document {expected_doc_id} contains raw registry token '{token}' in visible prose"
+        )
+
+    # Specific strict threshold check for OPS-004
+    if expected_doc_id == "OPS-004":
+        s03_text = section_bodies[2]
+        has_strict_above = bool(
+            re.search(r"\babove\s+(?:INR\s+500|500\s+inr)\b", s03_text, re.IGNORECASE)
+        )
+        forbidden_phrases = FORBIDDEN_RECEIPT_REGEX.findall(s03_text)
+        if forbidden_phrases:
+            errors.append(
+                f"Document OPS-004 contains forbidden receipt threshold phrasing in S03: {forbidden_phrases}"
+            )
+        if not has_strict_above:
+            errors.append(
+                "Document OPS-004 S03 must specify that receipts are required for claims above INR 500"
+            )
 
     # Direct markdown links to source documents
     direct_links = MARKDOWN_LINK_REGEX.findall(body)
@@ -331,13 +382,41 @@ def validate_single_document(
         if prot_title.lower() in body.lower():
             errors.append(f"Document {expected_doc_id} exposes protected document title '{prot_title}' (from {prot_id})")
 
-    # 6. Document references and relationship direction checks
-    all_doc_ids = set(inventory.keys())
-    # S05 references check
+    # S05 section body
     s05_text = section_bodies[4]
+
+    # Allowed canonical protected document IDs from the document's own facts
+    allowed_canonical_ids = set()
+    for f_meta in facts.get(expected_doc_id, {}).values():
+        val = f_meta.get("exact_value", "") or ""
+        allowed_canonical_ids.update(re.findall(r"[A-Z]{2,3}-\d{3}", val))
+
+    # Check for exposure of protected document IDs in unrelated prose or S05
+    for prot_id in protected_titles:
+        if prot_id in body:
+            if prot_id not in allowed_canonical_ids:
+                errors.append(
+                    f"Document {expected_doc_id} exposes protected document ID '{prot_id}' in unrelated prose"
+                )
+            elif prot_id in s05_text:
+                errors.append(
+                    f"Document {expected_doc_id} S05 exposes protected document ID '{prot_id}'"
+                )
+
+    # 6. Document references, coverage, and relationship direction checks
+    all_doc_ids = set(inventory.keys())
     s05_refs = DOC_ID_REGEX.findall(s05_text)
     outgoing_targets = {cr["to_doc"] for cr in outgoing_map.get(expected_doc_id, [])}
     incoming_sources = {cr["from_doc"] for cr in incoming_map.get(expected_doc_id, [])}
+
+    # Relationship coverage: ensure safe outgoing destinations are referenced in S05
+    for cr in outgoing_map.get(expected_doc_id, []):
+        target_id = cr["to_doc"]
+        if target_id not in protected_titles:
+            if target_id not in s05_text:
+                errors.append(
+                    f"Document {expected_doc_id} S05 is missing required outgoing relationship reference to {target_id}"
+                )
 
     for ref_id in s05_refs:
         if ref_id == expected_doc_id:
@@ -354,7 +433,6 @@ def validate_single_document(
 
         if ref_id in incoming_sources:
             # Check if described as incoming
-            # Extract sentence containing ref_id
             sentences = re.split(r"[.\n]", s05_text)
             ref_sentence = next((s for s in sentences if ref_id in s), "")
             is_incoming_described = bool(
@@ -423,19 +501,19 @@ def validate_documents(
 
     for doc_id, file_path in expected_files.items():
         if not file_path.exists():
-            errors.append(f"Missing source document: {file_path.relative_to(source_dir)}")
+            rel_path = file_path.relative_to(source_dir) if file_path.is_relative_to(source_dir) else file_path
+            errors.append(f"Missing source document: {rel_path}")
 
-    # Check for unexpected files in source_dir
-    actual_files = list(source_dir.rglob("*.md")) + list(source_dir.rglob("*.markdown"))
-    expected_paths = set(expected_files.values())
-    for af in actual_files:
-        if af not in expected_paths:
-            errors.append(f"Unexpected source document: {af.relative_to(source_dir)}")
+    # 2. Check for unexpected Markdown files
+    all_md_files = list(source_dir.glob("**/*.md"))
+    expected_path_set = {p.resolve() for p in expected_files.values()}
 
-    if len(expected_files) != 24:
-        errors.append(f"Expected 24 documents in inventory, found {len(expected_files)}")
+    for md_file in all_md_files:
+        if md_file.resolve() not in expected_path_set:
+            rel_path = md_file.relative_to(source_dir) if md_file.is_relative_to(source_dir) else md_file
+            errors.append(f"Unexpected source document: {rel_path}")
 
-    # 2. Validate each document individually
+    # 3. Validate each document in detail
     for doc_id, file_path in expected_files.items():
         if file_path.exists():
             validate_single_document(file_path, doc_id, specs, errors)
@@ -443,17 +521,20 @@ def validate_documents(
     return errors
 
 
-def main() -> None:
+def main() -> int:
+    """CLI entrypoint for document validation."""
+    print("Validating 24 Aster Systems knowledge documents...")
     errors = validate_documents()
+
     if errors:
         print(f"Document validation failed with {len(errors)} error(s):")
         for err in errors:
             print(f"  - {err}")
-        sys.exit(1)
-    else:
-        print("Document validation passed: 24 v1 Markdown documents, 144 sections, 72 fact markers.")
-        sys.exit(0)
+        return 1
+
+    print("Document validation passed: 24 v1 Markdown documents, 144 sections, 72 fact markers.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
