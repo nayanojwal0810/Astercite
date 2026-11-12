@@ -587,6 +587,130 @@ class TestDatasetSpec(unittest.TestCase):
             check_document_access(general_perm, ["team_lead"], "general")
         )
 
+    def test_missing_csv_row_values_rejected_without_crash(self):
+        """34. Confirm missing or incomplete row values in CSV files are rejected with file and row without crashing."""
+        # Test both incomplete rows (fewer columns) and empty required fields
+        cases = [
+            (
+                "document_inventory.csv",
+                2,
+                "ENG-001,Production Incident Severity & Escalation Policy\n",
+                "missing field(s)",
+            ),
+            (
+                "document_inventory.csv",
+                2,
+                "ENG-001,,engineering,department,engineer|team_lead,engineering,,v1,v1,synthetic\n",
+                "missing required value",
+            ),
+            (
+                "cross_references.csv",
+                2,
+                "ENG-001,ENG-002\n",
+                "missing field(s)",
+            ),
+            (
+                "cross_references.csv",
+                2,
+                ",ENG-002,procedure_flow,incident handover\n",
+                "missing required value",
+            ),
+            (
+                "fact_registry.csv",
+                2,
+                "ENG001_F01,v1\n",
+                "missing field(s)",
+            ),
+            (
+                "fact_registry.csv",
+                2,
+                "ENG001_F01,v1,ENG-001,p1_incident_acknowledgment,,minutes,engineer,2026-11-01,\n",
+                "missing required value",
+            ),
+        ]
+        for filename, row_num, replacement_line, expected_error_type in cases:
+            with self.subTest(file=filename, error_type=expected_error_type):
+                temp_spec = self._create_temp_spec()
+                file_path = temp_spec / filename
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+                lines[row_num - 1] = replacement_line
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+
+                errors = validate_dataset(temp_spec)
+                expected_row_str = f"row {row_num}"
+                self.assertTrue(
+                    any(
+                        filename in err
+                        and expected_row_str in err
+                        and expected_error_type in err
+                        for err in errors
+                    ),
+                    f"Expected error '{expected_error_type}' for {filename} {expected_row_str}, got: {errors}",
+                )
+
+    def test_check_document_access_unknown_roles_and_invalid_departments(self):
+        """35. Confirm check_document_access rejects unknown roles, invalid departments, and malformed permissions."""
+        doc_perm = {
+            "allowed_roles": ["engineer", "team_lead"],
+            "team_lead_departments": ["engineering"],
+        }
+
+        # 1. Unknown roles in user_roles
+        self.assertFalse(check_document_access(doc_perm, ["unknown_role"], "department", "engineering"))
+        self.assertFalse(check_document_access(doc_perm, ["superadmin"], "department", "engineering"))
+        self.assertFalse(check_document_access(doc_perm, ["engineer", "unknown_role"], "department", "engineering"))
+
+        # 2. Unknown roles in allowed_roles
+        perm_with_bad_role = {
+            "allowed_roles": ["engineer", "superadmin"],
+            "team_lead_departments": ["engineering"],
+        }
+        self.assertFalse(check_document_access(perm_with_bad_role, ["engineer"], "department", "engineering"))
+        self.assertFalse(
+            check_document_access({"allowed_roles": ["unknown_role"], "team_lead_departments": []}, ["employee"], "general")
+        )
+
+        # 3. Invalid user department
+        self.assertFalse(check_document_access(doc_perm, ["team_lead"], "department", "invalid_dept"))
+        self.assertFalse(check_document_access(doc_perm, ["team_lead"], "restricted", "marketing"))
+        self.assertFalse(check_document_access(doc_perm, ["team_lead"], "department", ""))
+
+        # 4. Invalid department in team_lead_departments
+        perm_with_bad_dept = {
+            "allowed_roles": ["team_lead"],
+            "team_lead_departments": ["invalid_dept"],
+        }
+        self.assertFalse(check_document_access(perm_with_bad_dept, ["team_lead"], "department", "engineering"))
+        perm_with_mixed_dept = {
+            "allowed_roles": ["team_lead"],
+            "team_lead_departments": ["engineering", "marketing"],
+        }
+        self.assertFalse(check_document_access(perm_with_mixed_dept, ["team_lead"], "department", "engineering"))
+
+        # 5. Missing or malformed permissions
+        self.assertFalse(check_document_access(None, ["engineer"], "general"))
+        self.assertFalse(check_document_access({}, ["engineer"], "general"))
+        self.assertFalse(check_document_access({"allowed_roles": ["engineer"]}, ["engineer"], "general"))
+        self.assertFalse(check_document_access({"team_lead_departments": []}, ["engineer"], "general"))
+
+        # 6. Preserve multiple valid roles
+        self.assertTrue(check_document_access(doc_perm, ["engineer", "team_lead"], "department", "engineering"))
+        self.assertTrue(check_document_access(doc_perm, ["engineer", "team_lead"], "department", "finance_operations"))
+        self.assertTrue(check_document_access(doc_perm, ["engineer", "it_support"], "department"))
+
+        # 7. Preserve department-specific team-lead access
+        self.assertTrue(check_document_access(doc_perm, ["team_lead"], "department", "engineering"))
+        self.assertFalse(check_document_access(doc_perm, ["team_lead"], "department", "finance_operations"))
+        self.assertFalse(check_document_access(doc_perm, ["team_lead"], "department", None))
+
+        # 8. Missing or invalid classification
+        self.assertFalse(check_document_access(doc_perm, ["engineer"], "invalid_classification", "engineering"))
+        self.assertFalse(check_document_access(doc_perm, ["engineer"], "", "engineering"))
+        self.assertFalse(check_document_access(doc_perm, ["engineer"], None, "engineering"))
+
 
 if __name__ == "__main__":
     unittest.main()

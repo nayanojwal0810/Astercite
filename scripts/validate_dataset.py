@@ -391,11 +391,14 @@ def read_and_validate_csv(
 
             for row in reader:
                 row_num = reader.line_num
+                has_row_error = False
+
                 # 1. Detect unexpected extra fields in row
                 if None in row:
                     errors.append(
                         f"{filename} row {row_num}: contains unexpected extra field(s): {row[None]}"
                     )
+                    has_row_error = True
 
                 # 2. Detect missing fields (row has fewer columns than header)
                 missing_in_row = [c for c in expected_headers if row.get(c) is None]
@@ -403,6 +406,7 @@ def read_and_validate_csv(
                     errors.append(
                         f"{filename} row {row_num}: missing field(s): {missing_in_row}"
                     )
+                    has_row_error = True
 
                 # 3. Detect missing required field values (excluding allowed empty fields)
                 empty_required = [
@@ -412,6 +416,10 @@ def read_and_validate_csv(
                     errors.append(
                         f"{filename} row {row_num}: missing required value for field(s): {empty_required}"
                     )
+                    has_row_error = True
+
+                if has_row_error:
+                    continue
 
                 rows.append((row_num, row))
 
@@ -456,18 +464,20 @@ def check_document_access(
     raw_allowed = doc_permissions.get("allowed_roles")
     if not isinstance(raw_allowed, list):
         return False
-    if not all(isinstance(r, str) for r in raw_allowed):
+    if not all(isinstance(r, str) and r in VALID_ROLES for r in raw_allowed):
         return False
 
     raw_tl_depts = doc_permissions.get("team_lead_departments")
     if not isinstance(raw_tl_depts, list):
         return False
-    if not all(isinstance(d, str) for d in raw_tl_depts):
+    if not all(isinstance(d, str) and d in EXPECTED_DEPARTMENTS for d in raw_tl_depts):
         return False
 
-    if not all(isinstance(r, str) for r in user_roles):
+    if not all(isinstance(r, str) and r in VALID_ROLES for r in user_roles):
         return False
-    if user_department is not None and not isinstance(user_department, str):
+    if user_department is not None and (
+        not isinstance(user_department, str) or user_department not in EXPECTED_DEPARTMENTS
+    ):
         return False
 
     allowed_roles = set(raw_allowed)
@@ -591,11 +601,11 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
 
     for row_num, row in inventory_data:
         inventory_rows.append(row)
-        doc_id = row.get("document_id", "").strip()
+        doc_id = (row.get("document_id") or "").strip()
         if doc_id in inventory_doc_ids:
             errors.append(f"document_inventory.csv row {row_num}: duplicate document_id '{doc_id}'")
         inventory_doc_ids.add(doc_id)
-        owner = row.get("owner_department", "").strip()
+        owner = (row.get("owner_department") or "").strip()
         dept_counts[owner] = dept_counts.get(owner, 0) + 1
 
     if len(inventory_rows) != 24:
@@ -611,8 +621,8 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
         policy_docs = {}
 
     for row in inventory_rows:
-        doc_id = row.get("document_id", "").strip()
-        title = row.get("title", "").strip()
+        doc_id = (row.get("document_id") or "").strip()
+        title = (row.get("title") or "").strip()
         if doc_id not in APPROVED_DOCUMENT_SPECS:
             errors.append(f"Unknown or unapproved document_id in inventory: {doc_id}")
             continue
@@ -628,7 +638,7 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
         if row.get("active_version") != "v1":
             errors.append(f"Document {doc_id} active_version must be v1, got: {row.get('active_version')}")
 
-        planned_vers = row.get("planned_versions", "").split("|")
+        planned_vers = (row.get("planned_versions") or "").split("|")
         if "v1" not in planned_vers:
             errors.append(f"Document {doc_id} planned_versions does not contain active version v1")
         if doc_id in ["ENG-003", "HR-001", "OPS-002"]:
@@ -641,7 +651,7 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             errors.append(f"Document {doc_id} source_type must be synthetic, got: {row.get('source_type')}")
 
         # Allowed roles in inventory
-        allowed_roles_str = row.get("allowed_roles", "").strip()
+        allowed_roles_str = (row.get("allowed_roles") or "").strip()
         inv_roles = allowed_roles_str.split("|") if allowed_roles_str else []
         if len(inv_roles) != len(set(inv_roles)):
             errors.append(f"Document {doc_id} inventory has duplicate allowed roles: {inv_roles}")
@@ -655,7 +665,7 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             errors.append(f"Document {doc_id} inventory allowed_roles {inv_roles} != approved {app_spec['allowed_roles']}")
 
         # Team lead departments in inventory
-        inv_tl_depts_str = row.get("team_lead_departments", "").strip()
+        inv_tl_depts_str = (row.get("team_lead_departments") or "").strip()
         inv_tl_depts = [inv_tl_depts_str] if inv_tl_depts_str else []
         if inv_tl_depts != app_spec["team_lead_departments"]:
             errors.append(f"Document {doc_id} inventory team_lead_departments {inv_tl_depts} != approved {app_spec['team_lead_departments']}")
@@ -737,8 +747,8 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
 
     for row_num, row in cr_data:
         rel_rows.append(row)
-        from_doc = row.get("from_doc", "").strip()
-        to_doc = row.get("to_doc", "").strip()
+        from_doc = (row.get("from_doc") or "").strip()
+        to_doc = (row.get("to_doc") or "").strip()
 
         if from_doc not in inventory_doc_ids:
             errors.append(f"cross_references from_doc not in inventory: {from_doc}")
@@ -771,8 +781,8 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
 
     # Check symmetric related_documents in inventory
     for row in inventory_rows:
-        doc_id = row.get("document_id", "").strip()
-        rel_field = row.get("related_documents", "").strip()
+        doc_id = (row.get("document_id") or "").strip()
+        rel_field = (row.get("related_documents") or "").strip()
         inv_related = set(rel_field.split("|")) if rel_field else set()
         expected_related = doc_relationships.get(doc_id, set())
         if inv_related != expected_related:
@@ -814,15 +824,15 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
 
     for row_num, row in facts_data:
         fact_rows.append(row)
-        fact_id = row.get("fact_id", "").strip()
-        doc_version = row.get("document_version", "").strip()
-        source_doc = row.get("source_doc_id", "").strip()
-        topic = row.get("topic", "").strip()
-        exact_value = row.get("exact_value", "").strip()
-        unit = row.get("unit", "").strip()
-        app_role = row.get("applicable_role", "").strip()
-        eff_from = row.get("effective_from", "").strip()
-        eff_until = row.get("effective_until", "").strip()
+        fact_id = (row.get("fact_id") or "").strip()
+        doc_version = (row.get("document_version") or "").strip()
+        source_doc = (row.get("source_doc_id") or "").strip()
+        topic = (row.get("topic") or "").strip()
+        exact_value = (row.get("exact_value") or "").strip()
+        unit = (row.get("unit") or "").strip()
+        app_role = (row.get("applicable_role") or "").strip()
+        eff_from = (row.get("effective_from") or "").strip()
+        eff_until = (row.get("effective_until") or "").strip()
 
         key = (fact_id, doc_version)
         if key in seen_facts:
