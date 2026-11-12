@@ -1,0 +1,321 @@
+"""PDF generator for Aster Systems knowledge documents.
+
+Converts approved v1 Markdown knowledge documents into searchable, professional
+A4 portrait PDF documents using ReportLab. Staging and validation occur before
+publishing to the output directory.
+"""
+
+from __future__ import annotations
+
+import csv
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+import xml.sax.saxutils
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+from reportlab.platypus import (
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+)
+import yaml
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.validate_documents import validate_documents
+
+
+class NumberedCanvas(canvas.Canvas):
+    """Two-pass canvas that adds running headers and dynamic 'Page X of Y' footers."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list[dict] = []
+        self._doc_id = ""
+
+    def set_doc_id(self, doc_id: str) -> None:
+        self._doc_id = doc_id
+
+    def showPage(self) -> None:
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self) -> None:
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_header_footer(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_header_footer(self, page_count: int) -> None:
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#555555"))
+
+        # Running header (pages > 1)
+        if self._pageNumber > 1:
+            header_text = f"Aster Systems — {self._doc_id}" if self._doc_id else "Aster Systems"
+            self.drawString(20 * mm, 297 * mm - 15 * mm, header_text)
+            self.setStrokeColor(colors.HexColor("#CCCCCC"))
+            self.setLineWidth(0.5)
+            self.line(20 * mm, 297 * mm - 16 * mm, 210 * mm - 20 * mm, 297 * mm - 16 * mm)
+
+        # Running footer (all pages)
+        self.drawString(20 * mm, 12 * mm, "Aster Systems Internal Documentation")
+        self.drawRightString(210 * mm - 20 * mm, 12 * mm, f"Page {self._pageNumber} of {page_count}")
+        self.setStrokeColor(colors.HexColor("#CCCCCC"))
+        self.setLineWidth(0.5)
+        self.line(20 * mm, 15 * mm, 210 * mm - 20 * mm, 15 * mm)
+        self.restoreState()
+
+
+def load_source_document(
+    file_path: Path,
+) -> tuple[dict, str, list[tuple[str, list[str]]]]:
+    """Parse Markdown front matter, H1 title, and 6 sections with paragraphs."""
+    content = file_path.read_text(encoding="utf-8").lstrip("\ufeff")
+    fm_match = re.match(r"^---\r?\n(.*?)\r?\n---(?:\r?\n(.*))?$", content, re.DOTALL)
+    if not fm_match:
+        raise ValueError(f"Missing YAML front matter in {file_path.name}")
+
+    metadata = yaml.safe_load(fm_match.group(1))
+    body = fm_match.group(2) or ""
+
+    h1_match = re.search(r"^#\s+(.+)$", body, flags=re.MULTILINE)
+    if not h1_match:
+        raise ValueError(f"Missing H1 title in {file_path.name}")
+    doc_title = h1_match.group(1).strip()
+
+    raw_sections = re.split(r"^##\s+(.+)$", body, flags=re.MULTILINE)
+    if len(raw_sections) != 13:
+        raise ValueError(
+            f"Expected exactly 6 sections in {file_path.name}, got {(len(raw_sections)-1)//2}"
+        )
+
+    sections: list[tuple[str, list[str]]] = []
+    for i in range(1, len(raw_sections), 2):
+        sec_title = raw_sections[i].strip()
+        sec_content = raw_sections[i + 1].strip()
+        marker_match = re.search(r"<!--\s*fact_id:\s*([A-Za-z0-9_]+)\s*-->", sec_content)
+        if marker_match:
+            p1 = sec_content[: marker_match.start()].strip()
+            p2 = sec_content[marker_match.end() :].strip()
+            paras = [p for p in [p1, p2] if p]
+        else:
+            paras = [p.strip() for p in re.split(r"\r?\n\s*\r?\n", sec_content) if p.strip()]
+        sections.append((sec_title, paras))
+
+    return metadata, doc_title, sections
+
+
+def build_pdf(
+    dest_path: Path,
+    metadata: dict,
+    doc_title: str,
+    sections: list[tuple[str, list[str]]],
+) -> None:
+    """Generate a single formatted A4 portrait PDF document."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_id = str(metadata.get("document_id", "")).strip()
+    raw_dept = str(metadata.get("owner_department", "")).strip()
+    dept_display = raw_dept.replace("_", " ").title()
+    classification_display = str(metadata.get("classification", "")).strip().title()
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "DocTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#111827"),
+        spaceAfter=6,
+    )
+    meta_style = ParagraphStyle(
+        "DocMeta",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor("#4B5563"),
+    )
+    h2_style = ParagraphStyle(
+        "SecHeading",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=16,
+        textColor=colors.HexColor("#1F2937"),
+        spaceBefore=8,
+        spaceAfter=3,
+        keepWithNext=True,
+    )
+    body_style = ParagraphStyle(
+        "BodyTextCustom",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#1F2937"),
+        spaceAfter=5,
+    )
+
+    doc = SimpleDocTemplate(
+        str(dest_path),
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+        title=doc_title,
+        author="Aster Systems",
+        subject=f"{doc_id} v1",
+    )
+
+    story = []
+
+    # Company label
+    company_style = ParagraphStyle(
+        "CompanyHeader",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#4B5563"),
+        spaceAfter=3,
+    )
+    story.append(Paragraph("<b>Aster Systems</b>", company_style))
+
+    # Document title
+    story.append(Paragraph(xml.sax.saxutils.escape(doc_title), title_style))
+
+    # Metadata banner
+    meta_lines = [
+        f"<b>Document ID:</b> {doc_id}",
+        "<b>Version:</b> v1",
+        f"<b>Department:</b> {dept_display}",
+        f"<b>Classification:</b> {classification_display}",
+        "<b>Effective Date:</b> 2026-11-01",
+    ]
+    story.append(Paragraph(" &nbsp;&nbsp;|&nbsp;&nbsp; ".join(meta_lines), meta_style))
+    story.append(Spacer(1, 3))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#D1D5DB"), spaceAfter=6))
+
+    # Sections and body paragraphs
+    for sec_title, paras in sections:
+        story.append(Paragraph(xml.sax.saxutils.escape(sec_title), h2_style))
+        for para in paras:
+            story.append(Paragraph(xml.sax.saxutils.escape(para), body_style))
+
+    class DocCanvas(NumberedCanvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.set_doc_id(doc_id)
+
+    doc.build(story, canvasmaker=DocCanvas)
+
+
+def generate_all_pdfs(
+    source_dir_path: Path | str | None = None,
+    output_dir_path: Path | str | None = None,
+    spec_dir_path: Path | str | None = None,
+) -> list[Path]:
+    """Validate source Markdown, generate 24 PDFs in staging, validate, and publish."""
+    # Late import to prevent circular dependency
+    from scripts.validate_pdfs import validate_pdfs
+
+    source_dir = Path(source_dir_path) if source_dir_path else PROJECT_ROOT / "data" / "source"
+    output_dir = Path(output_dir_path) if output_dir_path else PROJECT_ROOT / "data" / "pdfs"
+    spec_dir = Path(spec_dir_path) if spec_dir_path else PROJECT_ROOT / "data" / "spec"
+
+    # Step 1: Pre-generation source validation
+    src_errors = validate_documents(source_dir, spec_dir)
+    if src_errors:
+        raise RuntimeError(
+            f"Source document validation failed with {len(src_errors)} error(s):\n"
+            + "\n".join(f"  - {err}" for err in src_errors)
+        )
+
+    # Step 2: Read document inventory
+    inv_file = spec_dir / "document_inventory.csv"
+    with open(inv_file, encoding="utf-8") as f:
+        inventory = {r["document_id"]: r for r in csv.DictReader(f)}
+
+    if len(inventory) != 24:
+        raise ValueError(f"Expected 24 documents in inventory, found {len(inventory)}")
+
+    # Step 3: Create temporary staging directory outside repository
+    staging_dir = Path(tempfile.mkdtemp(prefix="astercite_pdf_staging_"))
+    try:
+        # Step 4: Generate all 24 PDFs into staging directory
+        staged_paths: list[Path] = []
+        for doc_id, meta in sorted(inventory.items()):
+            dept = meta["owner_department"]
+            src_filename = f"{doc_id.lower().replace('-', '_')}.md"
+            src_path = source_dir / dept / src_filename
+            if not src_path.exists():
+                raise FileNotFoundError(f"Source document missing: {src_path}")
+
+            metadata, doc_title, sections = load_source_document(src_path)
+            staged_pdf = staging_dir / dept / f"{doc_id.lower().replace('-', '_')}_v1.pdf"
+            build_pdf(staged_pdf, metadata, doc_title, sections)
+            staged_paths.append(staged_pdf)
+
+        # Step 5: Validate staged PDFs before publication
+        val_errors = validate_pdfs(
+            output_dir_path=staging_dir,
+            source_dir_path=source_dir,
+            spec_dir_path=spec_dir,
+        )
+        if val_errors:
+            raise RuntimeError(
+                f"Staged PDF collection failed validation with {len(val_errors)} error(s):\n"
+                + "\n".join(f"  - {err}" for err in val_errors)
+            )
+
+        # Step 6: Safe publication to output_dir
+        published_paths: list[Path] = []
+        for staged_file in staged_paths:
+            rel = staged_file.relative_to(staging_dir)
+            target_path = output_dir / rel
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged_file, target_path)
+            published_paths.append(target_path)
+
+        return published_paths
+
+    finally:
+        # Step 7: Always clean up temporary staging directory
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+
+def main() -> int:
+    """CLI entrypoint for PDF generation."""
+    print("Starting AsterCite v1 PDF generation with mandatory staging and validation...")
+    try:
+        generated = generate_all_pdfs()
+        print(f"Successfully generated and published {len(generated)} searchable v1 PDF documents:")
+        for path in generated:
+            print(f"  - {path.relative_to(PROJECT_ROOT)}")
+        return 0
+    except Exception as exc:
+        print(f"PDF generation failed: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
