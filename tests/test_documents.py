@@ -409,5 +409,172 @@ class TestDocuments(unittest.TestCase):
         )
 
 
+    def test_34_unexpected_yaml_metadata_keys_rejected(self):
+        """34. Reject unexpected YAML front-matter fields, preserving only the 7 approved keys."""
+        temp_source = self._create_temp_source()
+        eng_001_path = temp_source / "engineering" / "eng_001.md"
+        content = eng_001_path.read_text(encoding="utf-8")
+
+        # Test A: allowed_roles key rejected
+        bad_roles = content.replace("source_type: synthetic\n", "source_type: synthetic\nallowed_roles: [employee]\n")
+        eng_001_path.write_text(bad_roles, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("ENG-001 contains unexpected metadata field: allowed_roles" in err for err in errors),
+            f"Expected unexpected metadata field error for allowed_roles, got: {errors}",
+        )
+
+        # Test B: approval_status key rejected
+        bad_status = content.replace("source_type: synthetic\n", "source_type: synthetic\napproval_status: approved\n")
+        eng_001_path.write_text(bad_status, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("ENG-001 contains unexpected metadata field: approval_status" in err for err in errors),
+            f"Expected unexpected metadata field error for approval_status, got: {errors}",
+        )
+
+        # Original document passes
+        eng_001_path.write_text(content, encoding="utf-8")
+        orig_errors = validate_documents(temp_source, self.spec_dir)
+        self.assertEqual(orig_errors, [])
+
+    def test_35_front_matter_position_and_delimiters(self):
+        """35. Require YAML front matter at file start and reject malformed/missing delimiters."""
+        temp_source = self._create_temp_source()
+        eng_001_path = temp_source / "engineering" / "eng_001.md"
+        orig_content = eng_001_path.read_text(encoding="utf-8")
+
+        # Case A: Leading text before opening delimiter
+        leading_text = "Ordinary preamble notes\n" + orig_content
+        eng_001_path.write_text(leading_text, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("front matter must start at the beginning of the file" in err for err in errors),
+            f"Expected front-matter-position error, got: {errors}",
+        )
+
+        # Case B: Malformed opening delimiter (e.g. ---- or ---foo)
+        malformed_open = orig_content.replace("---\n", "----\n", 1)
+        eng_001_path.write_text(malformed_open, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("malformed opening front matter delimiter" in err for err in errors),
+            f"Expected malformed opening delimiter error, got: {errors}",
+        )
+
+        # Case C: Missing closing delimiter
+        parts = orig_content.split("---\n", 2)
+        missing_close = "---\n" + parts[1] + parts[2]
+        eng_001_path.write_text(missing_close, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("missing closing front matter delimiter" in err for err in errors),
+            f"Expected missing closing delimiter error, got: {errors}",
+        )
+
+        # Case D: Valid existing front matter passes
+        eng_001_path.write_text(orig_content, encoding="utf-8")
+        orig_errors = validate_documents(temp_source, self.spec_dir)
+        self.assertEqual(orig_errors, [])
+
+    def test_36_protected_canonical_id_placement(self):
+        """36. Restrict protected canonical document IDs strictly to their approved fact sections."""
+        # Test A: Existing canonical references in approved sections pass
+        errors = validate_documents(self.source_dir, self.spec_dir)
+        self.assertEqual(errors, [])
+
+        temp_source = self._create_temp_source()
+        ops_005_path = temp_source / "finance_operations" / "ops_005.md"
+        orig_content = ops_005_path.read_text(encoding="utf-8")
+
+        # Test B: Protected ID in S01 (Purpose and Scope)
+        bad_s01 = orig_content.replace(
+            "## Purpose and Scope\n",
+            "## Purpose and Scope\nThis policy references OPS-002 purchasing requirements. ",
+        )
+        ops_005_path.write_text(bad_s01, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("OPS-005" in err and "OPS-002" in err and "section S01" in err for err in errors),
+            f"Expected protected ID error for OPS-002 in S01, got: {errors}",
+        )
+
+        # Test C: Protected ID in wrong factual section (S02)
+        bad_s02 = orig_content.replace(
+            "## Asset Register Ownership\n",
+            "## Asset Register Ownership\nAsset register protocols connect to OPS-002 procedures. ",
+        )
+        ops_005_path.write_text(bad_s02, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("OPS-005" in err and "OPS-002" in err and "section S02" in err for err in errors),
+            f"Expected protected ID error for OPS-002 in S02, got: {errors}",
+        )
+
+        # Test D: Protected ID in S05
+        bad_s05 = orig_content.replace(
+            "## Exceptions and Related Documents\n",
+            "## Exceptions and Related Documents\nOutbound procurement aligns with OPS-002 directly. ",
+        )
+        ops_005_path.write_text(bad_s05, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("OPS-005" in err and "OPS-002" in err and "section S05" in err for err in errors),
+            f"Expected protected ID error for OPS-002 in S05, got: {errors}",
+        )
+
+        # Test E: Safe relationship description passes without exposing OPS-002 in S05
+        ops_005_path.write_text(orig_content, encoding="utf-8")
+        clean_errors = validate_documents(temp_source, self.spec_dir)
+        self.assertEqual(clean_errors, [])
+
+    def test_37_unapproved_protected_id_rejected(self):
+        """37. Reject unapproved protected document IDs exposed in lower-access documents."""
+        temp_source = self._create_temp_source()
+        hr_001_path = temp_source / "people_operations" / "hr_001.md"
+        content = hr_001_path.read_text(encoding="utf-8")
+
+        # HR-001 is general classification; inserting restricted ENG-006 must be rejected
+        mutated = content.replace("## Leave Request Process\n", "## Leave Request Process\nEscalations follow ENG-006. ")
+        hr_001_path.write_text(mutated, encoding="utf-8")
+        errors = validate_documents(temp_source, self.spec_dir)
+        self.assertTrue(
+            any("HR-001" in err and "ENG-006" in err and "section S04" in err for err in errors),
+            f"Expected protected document ID error for ENG-006 in HR-001, got: {errors}",
+        )
+
+    def test_38_its002_purpose_and_scope_reading_roles(self):
+        """38. Verify that ITS-002 Purpose and Scope identifies IT Support and HR staff and denies team leads."""
+        # 1. Authority check from access policy
+        its002_policy = self.specs["access_policy"]["documents"]["ITS-002"]
+        self.assertIn("it_support", its002_policy["allowed_roles"])
+        self.assertIn("hr_staff", its002_policy["allowed_roles"])
+        self.assertNotIn("team_lead", its002_policy["allowed_roles"])
+        self.assertEqual(its002_policy["team_lead_departments"], [])
+
+        # 2. Document content check
+        its002_file = self.source_dir / "it_support" / "its_002.md"
+        content = its002_file.read_text(encoding="utf-8")
+
+        # Extract Purpose and Scope section (S01)
+        match = re.search(r"## Purpose and Scope\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
+        self.assertIsNotNone(match, "ITS-002 missing Purpose and Scope section")
+        purpose_text = match.group(1)
+
+        # Confirm it identifies authorized readership: IT Support and HR staff
+        self.assertIn(
+            "This document is restricted to authorized IT Support and HR staff",
+            purpose_text,
+            "ITS-002 Purpose and Scope must identify IT Support and HR staff as authorized readership",
+        )
+
+        # Confirm team leads are not granted reading access
+        self.assertNotIn(
+            "team lead",
+            purpose_text.lower(),
+            "ITS-002 Purpose and Scope must not claim team leads have reading permission",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

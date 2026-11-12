@@ -189,13 +189,22 @@ def validate_single_document(
         return
 
     # Check YAML front matter
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        errors.append(f"Document {file_path.name} missing standard YAML front matter delimiters")
+    norm_content = content.lstrip("\ufeff")
+    if not norm_content.startswith("---"):
+        errors.append(f"Document {file_path.name} front matter must start at the beginning of the file")
         return
 
-    raw_yaml = parts[1]
-    body = parts[2]
+    if not re.match(r"^---\r?\n", norm_content):
+        errors.append(f"Document {file_path.name} malformed opening front matter delimiter")
+        return
+
+    fm_match = re.match(r"^---\r?\n(.*?)\r?\n---(?:\r?\n(.*))?$", norm_content, re.DOTALL)
+    if not fm_match:
+        errors.append(f"Document {file_path.name} missing closing front matter delimiter")
+        return
+
+    raw_yaml = fm_match.group(1)
+    body = fm_match.group(2) or ""
 
     try:
         metadata = yaml.safe_load(raw_yaml)
@@ -211,6 +220,10 @@ def validate_single_document(
     for req_field in REQUIRED_METADATA_FIELDS:
         if req_field not in metadata:
             errors.append(f"Document {expected_doc_id} missing metadata field: {req_field}")
+
+    for key in metadata:
+        if key not in REQUIRED_METADATA_FIELDS:
+            errors.append(f"Document {expected_doc_id} contains unexpected metadata field: {key}")
 
     doc_id = metadata.get("document_id")
     if doc_id != expected_doc_id:
@@ -385,23 +398,38 @@ def validate_single_document(
     # S05 section body
     s05_text = section_bodies[4]
 
-    # Allowed canonical protected document IDs from the document's own facts
-    allowed_canonical_ids = set()
-    for f_meta in facts.get(expected_doc_id, {}).values():
-        val = f_meta.get("exact_value", "") or ""
-        allowed_canonical_ids.update(re.findall(r"[A-Z]{2,3}-\d{3}", val))
+    # Map protected document IDs required by canonical facts to their approved sections
+    allowed_fact_sections = {}
+    doc_outline = outlines.get(expected_doc_id, {})
+    fact_to_section = {}
+    for sec in doc_outline.get("sections", []):
+        s_id = sec.get("section_id")
+        for fid in sec.get("fact_ids", []):
+            fact_to_section[fid] = s_id
 
-    # Check for exposure of protected document IDs in unrelated prose or S05
+    for fid, f_meta in facts.get(expected_doc_id, {}).items():
+        val = f_meta.get("exact_value", "") or ""
+        sec_id = fact_to_section.get(fid)
+        if sec_id:
+            for p_id in re.findall(r"[A-Z]{2,3}-\d{3}", val):
+                allowed_fact_sections.setdefault(p_id, set()).add(sec_id)
+
+    # Check for exposure of protected document IDs across sections and preamble
+    preamble = raw_sections[0] if raw_sections else ""
     for prot_id in protected_titles:
-        if prot_id in body:
-            if prot_id not in allowed_canonical_ids:
-                errors.append(
-                    f"Document {expected_doc_id} exposes protected document ID '{prot_id}' in unrelated prose"
-                )
-            elif prot_id in s05_text:
-                errors.append(
-                    f"Document {expected_doc_id} S05 exposes protected document ID '{prot_id}'"
-                )
+        if prot_id in preamble:
+            errors.append(
+                f"Document {expected_doc_id} exposes protected document ID '{prot_id}' in title or preamble"
+            )
+
+    for sec_meta, sec_body in zip(expected_sections, section_bodies):
+        current_sec_id = sec_meta["section_id"]
+        for prot_id in protected_titles:
+            if prot_id in sec_body:
+                if current_sec_id not in allowed_fact_sections.get(prot_id, set()):
+                    errors.append(
+                        f"Document {expected_doc_id} exposes protected document ID '{prot_id}' in section {current_sec_id}"
+                    )
 
     # 6. Document references, coverage, and relationship direction checks
     all_doc_ids = set(inventory.keys())
