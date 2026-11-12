@@ -458,6 +458,135 @@ class TestDatasetSpec(unittest.TestCase):
         with self.assertRaises(TypeError):
             check_document_access(doc_perm, ["employee"])
 
+    def test_extra_csv_fields_rejected_without_crash(self):
+        """32. Confirm unexpected extra fields in CSV files are rejected with file and row without crashing."""
+        csv_files = [
+            ("document_inventory.csv", 2),
+            ("cross_references.csv", 2),
+            ("fact_registry.csv", 2),
+        ]
+        for filename, row_num in csv_files:
+            with self.subTest(file=filename, row=row_num):
+                temp_spec = self._create_temp_spec()
+                file_path = temp_spec / filename
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+                # Add an unexpected extra field to row 2 (index 1)
+                lines[row_num - 1] = lines[row_num - 1].rstrip("\r\n") + ",unexpected_extra_field\n"
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+
+                errors = validate_dataset(temp_spec)
+                expected_file_str = filename
+                expected_row_str = f"row {row_num}"
+                self.assertTrue(
+                    any(
+                        expected_file_str in err
+                        and expected_row_str in err
+                        and "unexpected extra field" in err
+                        for err in errors
+                    ),
+                    f"Expected extra field error for {filename} {expected_row_str}, got: {errors}",
+                )
+
+    def test_malformed_permission_lists_rejected_without_crash(self):
+        """33. Confirm malformed permission lists in access_policy.yaml and helper are rejected without crashing."""
+        # 1-3. Malformed allowed_roles items: nested list, dict, number, null
+        malformed_role_cases = [
+            ("nested_list", [["engineer"]]),
+            ("dict", [{"role": "engineer"}]),
+            ("number", [42]),
+            ("null", [None]),
+        ]
+        for label, invalid_value in malformed_role_cases:
+            with self.subTest(case=f"allowed_roles_{label}"):
+                temp_spec = self._create_temp_spec()
+                policy_path = temp_spec / "access_policy.yaml"
+                with open(policy_path, "r", encoding="utf-8") as f:
+                    policy_data = yaml.safe_load(f)
+
+                policy_data["documents"]["ENG-001"]["allowed_roles"] = invalid_value
+                with open(policy_path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(policy_data, f)
+
+                errors = validate_dataset(temp_spec)
+                self.assertTrue(
+                    any("ENG-001" in err and "allowed_roles" in err for err in errors),
+                    f"Expected error for ENG-001 allowed_roles {label}, got: {errors}",
+                )
+
+        # 4. Malformed team_lead_departments items: nested list, dict, number, null
+        malformed_dept_cases = [
+            ("nested_list", [["engineering"]]),
+            ("dict", [{"dept": "engineering"}]),
+            ("number", [99]),
+            ("null", [None]),
+        ]
+        for label, invalid_value in malformed_dept_cases:
+            with self.subTest(case=f"team_lead_departments_{label}"):
+                temp_spec = self._create_temp_spec()
+                policy_path = temp_spec / "access_policy.yaml"
+                with open(policy_path, "r", encoding="utf-8") as f:
+                    policy_data = yaml.safe_load(f)
+
+                policy_data["documents"]["ENG-001"]["team_lead_departments"] = invalid_value
+                with open(policy_path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(policy_data, f)
+
+                errors = validate_dataset(temp_spec)
+                self.assertTrue(
+                    any("ENG-001" in err and "team_lead_departments" in err for err in errors),
+                    f"Expected error for ENG-001 team_lead_departments {label}, got: {errors}",
+                )
+
+        # 5. check_document_access() returns False for malformed permission lists
+        malformed_doc_perms = [
+            {"allowed_roles": [["engineer"]], "team_lead_departments": []},
+            {"allowed_roles": [{"role": "engineer"}], "team_lead_departments": []},
+            {"allowed_roles": [123], "team_lead_departments": []},
+            {"allowed_roles": [None], "team_lead_departments": []},
+            {"allowed_roles": "engineer", "team_lead_departments": []},
+            {"allowed_roles": ["engineer"], "team_lead_departments": [["engineering"]]},
+            {"allowed_roles": ["engineer"], "team_lead_departments": [{"dept": "engineering"}]},
+            {"allowed_roles": ["engineer"], "team_lead_departments": [456]},
+            {"allowed_roles": ["engineer"], "team_lead_departments": [None]},
+            {"allowed_roles": ["engineer"], "team_lead_departments": "engineering"},
+        ]
+        for perm in malformed_doc_perms:
+            with self.subTest(helper_perm=perm):
+                self.assertFalse(
+                    check_document_access(perm, ["engineer"], "department", "engineering")
+                )
+                self.assertFalse(
+                    check_document_access(perm, ["team_lead"], "restricted", "engineering")
+                )
+
+        # 6. Valid permissions still work
+        valid_perm = {
+            "allowed_roles": ["engineer", "team_lead"],
+            "team_lead_departments": ["engineering"],
+        }
+        self.assertTrue(
+            check_document_access(valid_perm, ["engineer"], "department")
+        )
+        self.assertTrue(
+            check_document_access(valid_perm, ["team_lead"], "department", "engineering")
+        )
+        self.assertFalse(
+            check_document_access(valid_perm, ["team_lead"], "department", "finance_operations")
+        )
+        general_perm = {
+            "allowed_roles": ["employee", "team_lead"],
+            "team_lead_departments": [],
+        }
+        self.assertTrue(
+            check_document_access(general_perm, ["employee"], "general")
+        )
+        self.assertTrue(
+            check_document_access(general_perm, ["team_lead"], "general")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

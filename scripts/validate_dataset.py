@@ -367,6 +367,78 @@ EXPECTED_RELATIONSHIPS = {
 }
 
 
+def read_and_validate_csv(
+    file_path: Path,
+    expected_headers: list[str],
+    required_fields: list[str],
+    errors: list[str],
+) -> list[tuple[int, dict]] | None:
+    """Read a CSV file, validate headers, detect extra fields and missing required values."""
+    filename = file_path.name
+    rows: list[tuple[int, dict]] = []
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames:
+                errors.append(f"{filename} is empty or missing headers")
+                return None
+            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
+            if missing_cols:
+                errors.append(f"{filename} missing required columns: {missing_cols}")
+                return None
+            if reader.fieldnames != expected_headers:
+                errors.append(f"{filename} headers mismatch: {reader.fieldnames}")
+
+            for row in reader:
+                row_num = reader.line_num
+                # 1. Detect unexpected extra fields in row
+                if None in row:
+                    errors.append(
+                        f"{filename} row {row_num}: contains unexpected extra field(s): {row[None]}"
+                    )
+
+                # 2. Detect missing fields (row has fewer columns than header)
+                missing_in_row = [c for c in expected_headers if row.get(c) is None]
+                if missing_in_row:
+                    errors.append(
+                        f"{filename} row {row_num}: missing field(s): {missing_in_row}"
+                    )
+
+                # 3. Detect missing required field values (excluding allowed empty fields)
+                empty_required = [
+                    c for c in required_fields if not str(row.get(c) or "").strip()
+                ]
+                if empty_required:
+                    errors.append(
+                        f"{filename} row {row_num}: missing required value for field(s): {empty_required}"
+                    )
+
+                rows.append((row_num, row))
+
+        return rows
+    except Exception as e:
+        errors.append(f"Failed to read {filename}: {e}")
+        return None
+
+
+def validate_permission_list(
+    items: any, doc_id: str, field_name: str, errors: list[str]
+) -> bool:
+    """Confirm value is a list of strings without invalid types. Return True if valid."""
+    if not isinstance(items, list):
+        errors.append(f"Document {doc_id} policy {field_name} must be a list")
+        return False
+    valid = True
+    for idx, item in enumerate(items):
+        if not isinstance(item, str):
+            item_type = type(item).__name__ if item is not None else "null"
+            errors.append(
+                f"Document {doc_id} policy {field_name} contains non-string item at index {idx} ({item_type})"
+            )
+            valid = False
+    return valid
+
+
 def check_document_access(
     doc_permissions: dict,
     user_roles: list[str],
@@ -381,8 +453,25 @@ def check_document_access(
     if classification not in ("general", "department", "restricted"):
         return False
 
-    allowed_roles = set(doc_permissions.get("allowed_roles") or [])
-    tl_depts = set(doc_permissions.get("team_lead_departments") or [])
+    raw_allowed = doc_permissions.get("allowed_roles")
+    if not isinstance(raw_allowed, list):
+        return False
+    if not all(isinstance(r, str) for r in raw_allowed):
+        return False
+
+    raw_tl_depts = doc_permissions.get("team_lead_departments")
+    if not isinstance(raw_tl_depts, list):
+        return False
+    if not all(isinstance(d, str) for d in raw_tl_depts):
+        return False
+
+    if not all(isinstance(r, str) for r in user_roles):
+        return False
+    if user_department is not None and not isinstance(user_department, str):
+        return False
+
+    allowed_roles = set(raw_allowed)
+    tl_depts = set(raw_tl_depts)
 
     for role in user_roles:
         if role == "document_admin":
@@ -467,46 +556,47 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
         errors.append(f"Invalid roles: {company_data.get('roles')}")
 
     # 4. Inventory checks
+    inventory_data = read_and_validate_csv(
+        spec_dir / "document_inventory.csv",
+        expected_headers=[
+            "document_id",
+            "title",
+            "owner_department",
+            "classification",
+            "allowed_roles",
+            "team_lead_departments",
+            "related_documents",
+            "planned_versions",
+            "active_version",
+            "source_type",
+        ],
+        required_fields=[
+            "document_id",
+            "title",
+            "owner_department",
+            "classification",
+            "allowed_roles",
+            "planned_versions",
+            "active_version",
+            "source_type",
+        ],
+        errors=errors,
+    )
+    if inventory_data is None:
+        return errors
+
     inventory_rows = []
     inventory_doc_ids = set()
     dept_counts: dict[str, int] = {}
-    try:
-        with open(spec_dir / "document_inventory.csv", "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            expected_headers = [
-                "document_id",
-                "title",
-                "owner_department",
-                "classification",
-                "allowed_roles",
-                "team_lead_departments",
-                "related_documents",
-                "planned_versions",
-                "active_version",
-                "source_type",
-            ]
-            if not reader.fieldnames:
-                errors.append("document_inventory.csv is empty or missing headers")
-                return errors
-            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
-            if missing_cols:
-                errors.append(f"document_inventory.csv missing required columns: {missing_cols}")
-                return errors
-            if reader.fieldnames != expected_headers:
-                errors.append(f"document_inventory.csv headers mismatch: {reader.fieldnames}")
-            for row in reader:
-                inventory_rows.append(row)
-                doc_id = row.get("document_id", "").strip()
-                if not doc_id:
-                    errors.append("document_inventory.csv has row with empty document_id")
-                    continue
-                if doc_id in inventory_doc_ids:
-                    errors.append(f"Duplicate document_id in inventory: {doc_id}")
-                inventory_doc_ids.add(doc_id)
-                owner = row.get("owner_department", "").strip()
-                dept_counts[owner] = dept_counts.get(owner, 0) + 1
-    except Exception as e:
-        errors.append(f"Failed to read document_inventory.csv: {e}")
+
+    for row_num, row in inventory_data:
+        inventory_rows.append(row)
+        doc_id = row.get("document_id", "").strip()
+        if doc_id in inventory_doc_ids:
+            errors.append(f"document_inventory.csv row {row_num}: duplicate document_id '{doc_id}'")
+        inventory_doc_ids.add(doc_id)
+        owner = row.get("owner_department", "").strip()
+        dept_counts[owner] = dept_counts.get(owner, 0) + 1
 
     if len(inventory_rows) != 24:
         errors.append(f"Expected 24 documents in inventory, found {len(inventory_rows)}")
@@ -578,9 +668,10 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             if not isinstance(p_entry, dict):
                 errors.append(f"Document {doc_id} in access_policy.yaml must be a dictionary")
                 continue
+
             p_allowed = p_entry.get("allowed_roles")
-            if p_allowed is None or not isinstance(p_allowed, list):
-                errors.append(f"Document {doc_id} policy missing allowed_roles list")
+            if not validate_permission_list(p_allowed, doc_id, "allowed_roles", errors):
+                pass
             else:
                 if len(p_allowed) != len(set(p_allowed)):
                     errors.append(f"Document {doc_id} policy has duplicate allowed roles: {p_allowed}")
@@ -595,9 +686,14 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
                     errors.append(f"Document {doc_id} allowed_roles in policy {p_allowed} != inventory {inv_roles}")
 
             p_tl_depts = p_entry.get("team_lead_departments")
-            if p_tl_depts is None or not isinstance(p_tl_depts, list):
-                errors.append(f"Document {doc_id} policy missing team_lead_departments list")
+            if not validate_permission_list(p_tl_depts, doc_id, "team_lead_departments", errors):
+                pass
             else:
+                if len(p_tl_depts) != len(set(p_tl_depts)):
+                    errors.append(f"Document {doc_id} policy has duplicate team_lead_departments: {p_tl_depts}")
+                for d in p_tl_depts:
+                    if d not in EXPECTED_DEPARTMENTS:
+                        errors.append(f"Document {doc_id} policy has invalid team_lead_department: {d}")
                 if p_tl_depts != app_spec["team_lead_departments"]:
                     errors.append(f"Document {doc_id} policy team_lead_departments {p_tl_depts} != approved {app_spec['team_lead_departments']}")
                 if p_tl_depts != inv_tl_depts:
@@ -626,54 +722,44 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
         errors.append("Security check failed: document_admin alone should NOT read ENG-006")
 
     # 6. Cross references checks
+    cr_data = read_and_validate_csv(
+        spec_dir / "cross_references.csv",
+        expected_headers=["from_doc", "to_doc", "relationship", "explanation"],
+        required_fields=["from_doc", "to_doc", "relationship", "explanation"],
+        errors=errors,
+    )
+    if cr_data is None:
+        return errors
+
     rel_rows = []
     seen_pairs = set()
     doc_relationships: dict[str, set[str]] = {doc_id: set() for doc_id in inventory_doc_ids}
-    try:
-        with open(spec_dir / "cross_references.csv", "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            expected_headers = ["from_doc", "to_doc", "relationship", "explanation"]
-            if not reader.fieldnames:
-                errors.append("cross_references.csv is empty or missing headers")
-                return errors
-            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
-            if missing_cols:
-                errors.append(f"cross_references.csv missing required columns: {missing_cols}")
-                return errors
-            if reader.fieldnames != expected_headers:
-                errors.append(f"cross_references.csv headers mismatch: {reader.fieldnames}")
 
-            for row in reader:
-                rel_rows.append(row)
-                from_doc = row.get("from_doc", "").strip()
-                to_doc = row.get("to_doc", "").strip()
+    for row_num, row in cr_data:
+        rel_rows.append(row)
+        from_doc = row.get("from_doc", "").strip()
+        to_doc = row.get("to_doc", "").strip()
 
-                if not from_doc or not to_doc:
-                    errors.append("cross_references.csv contains row with empty from_doc or to_doc")
-                    continue
+        if from_doc not in inventory_doc_ids:
+            errors.append(f"cross_references from_doc not in inventory: {from_doc}")
+        if to_doc not in inventory_doc_ids:
+            errors.append(f"cross_references to_doc not in inventory: {to_doc}")
 
-                if from_doc not in inventory_doc_ids:
-                    errors.append(f"cross_references from_doc not in inventory: {from_doc}")
-                if to_doc not in inventory_doc_ids:
-                    errors.append(f"cross_references to_doc not in inventory: {to_doc}")
+        if from_doc == to_doc:
+            errors.append(f"Self-referencing relationship in cross_references.csv: {from_doc}")
 
-                if from_doc == to_doc:
-                    errors.append(f"Self-referencing relationship in cross_references.csv: {from_doc}")
+        pair = (from_doc, to_doc)
+        if pair in seen_pairs:
+            errors.append(f"Duplicate relationship: {from_doc} -> {to_doc}")
+        seen_pairs.add(pair)
 
-                pair = (from_doc, to_doc)
-                if pair in seen_pairs:
-                    errors.append(f"Duplicate relationship: {from_doc} -> {to_doc}")
-                seen_pairs.add(pair)
+        if pair not in EXPECTED_RELATIONSHIPS:
+            errors.append(f"Unapproved relationship pair: {from_doc} -> {to_doc}")
 
-                if pair not in EXPECTED_RELATIONSHIPS:
-                    errors.append(f"Unapproved relationship pair: {from_doc} -> {to_doc}")
-
-                if from_doc in doc_relationships and to_doc in inventory_doc_ids:
-                    doc_relationships[from_doc].add(to_doc)
-                if to_doc in doc_relationships and from_doc in inventory_doc_ids:
-                    doc_relationships[to_doc].add(from_doc)
-    except Exception as e:
-        errors.append(f"Failed to read cross_references.csv: {e}")
+        if from_doc in doc_relationships and to_doc in inventory_doc_ids:
+            doc_relationships[from_doc].add(to_doc)
+        if to_doc in doc_relationships and from_doc in inventory_doc_ids:
+            doc_relationships[to_doc].add(from_doc)
 
     if len(rel_rows) != 12:
         errors.append(f"Expected 12 relationships in cross_references.csv, found {len(rel_rows)}")
@@ -695,106 +781,108 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             )
 
     # 7. Fact registry checks
+    facts_data = read_and_validate_csv(
+        spec_dir / "fact_registry.csv",
+        expected_headers=[
+            "fact_id",
+            "document_version",
+            "source_doc_id",
+            "topic",
+            "exact_value",
+            "unit",
+            "applicable_role",
+            "effective_from",
+            "effective_until",
+        ],
+        required_fields=[
+            "fact_id",
+            "document_version",
+            "source_doc_id",
+            "topic",
+            "exact_value",
+            "applicable_role",
+            "effective_from",
+        ],
+        errors=errors,
+    )
+    if facts_data is None:
+        return errors
+
     fact_rows = []
     seen_facts = set()
     doc_fact_count: dict[str, int] = {}
-    try:
-        with open(spec_dir / "fact_registry.csv", "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            expected_headers = [
-                "fact_id",
-                "document_version",
-                "source_doc_id",
-                "topic",
-                "exact_value",
-                "unit",
-                "applicable_role",
-                "effective_from",
-                "effective_until",
-            ]
-            if not reader.fieldnames:
-                errors.append("fact_registry.csv is empty or missing headers")
-                return errors
-            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
-            if missing_cols:
-                errors.append(f"fact_registry.csv missing required columns: {missing_cols}")
-                return errors
-            if reader.fieldnames != expected_headers:
-                errors.append(f"fact_registry.csv headers mismatch: {reader.fieldnames}")
 
-            for row in reader:
-                fact_rows.append(row)
-                fact_id = row.get("fact_id", "").strip()
-                doc_version = row.get("document_version", "").strip()
-                source_doc = row.get("source_doc_id", "").strip()
-                topic = row.get("topic", "").strip()
-                exact_value = row.get("exact_value", "").strip()
-                unit = row.get("unit", "").strip()
-                app_role = row.get("applicable_role", "").strip()
-                eff_from = row.get("effective_from", "").strip()
-                eff_until = row.get("effective_until", "").strip()
+    for row_num, row in facts_data:
+        fact_rows.append(row)
+        fact_id = row.get("fact_id", "").strip()
+        doc_version = row.get("document_version", "").strip()
+        source_doc = row.get("source_doc_id", "").strip()
+        topic = row.get("topic", "").strip()
+        exact_value = row.get("exact_value", "").strip()
+        unit = row.get("unit", "").strip()
+        app_role = row.get("applicable_role", "").strip()
+        eff_from = row.get("effective_from", "").strip()
+        eff_until = row.get("effective_until", "").strip()
 
-                key = (fact_id, doc_version)
-                if key in seen_facts:
-                    errors.append(f"Duplicate fact key (fact_id, document_version): {key}")
-                seen_facts.add(key)
+        key = (fact_id, doc_version)
+        if key in seen_facts:
+            errors.append(f"Duplicate fact key (fact_id, document_version): {key}")
+        seen_facts.add(key)
 
-                if doc_version != "v1":
-                    errors.append(f"Fact {fact_id} must have document_version 'v1', got '{doc_version}'")
+        if doc_version != "v1":
+            errors.append(f"Fact {fact_id} must have document_version 'v1', got '{doc_version}'")
 
-                if source_doc not in inventory_doc_ids:
-                    errors.append(f"Fact {fact_id} source_doc_id '{source_doc}' not in inventory")
+        if source_doc not in inventory_doc_ids:
+            errors.append(f"Fact {fact_id} source_doc_id '{source_doc}' not in inventory")
 
-                # Verify expected fact data
-                if fact_id not in EXPECTED_FACTS:
-                    errors.append(f"Unapproved extra fact in registry: {fact_id}")
-                else:
-                    exp = EXPECTED_FACTS[fact_id]
-                    if source_doc != exp["source_doc_id"]:
-                        errors.append(
-                            f"Fact {fact_id} source_doc_id mismatch: '{source_doc}' != '{exp['source_doc_id']}'"
-                        )
-                    if exact_value != exp["exact_value"]:
-                        errors.append(
-                            f"Fact {fact_id} exact_value mismatch: '{exact_value}' != '{exp['exact_value']}'"
-                        )
-                    if unit != exp["unit"]:
-                        errors.append(
-                            f"Fact {fact_id} unit mismatch: '{unit}' != '{exp['unit']}'"
-                        )
-                    if topic != exp["topic"]:
-                        errors.append(
-                            f"Fact {fact_id} topic mismatch: '{topic}' != '{exp['topic']}'"
-                        )
-                    if app_role != exp["applicable_role"]:
-                        errors.append(
-                            f"Fact {fact_id} applicable_role mismatch: '{app_role}' != '{exp['applicable_role']}'"
-                        )
+        # Verify expected fact data
+        if fact_id not in EXPECTED_FACTS:
+            errors.append(f"Unapproved extra fact in registry: {fact_id}")
+        else:
+            exp = EXPECTED_FACTS[fact_id]
+            if source_doc != exp["source_doc_id"]:
+                errors.append(
+                    f"Fact {fact_id} source_doc_id mismatch: '{source_doc}' != '{exp['source_doc_id']}'"
+                )
+            if exact_value != exp["exact_value"]:
+                errors.append(
+                    f"Fact {fact_id} exact_value mismatch: '{exact_value}' != '{exp['exact_value']}'"
+                )
+            if unit != exp["unit"]:
+                errors.append(
+                    f"Fact {fact_id} unit mismatch: '{unit}' != '{exp['unit']}'"
+                )
+            if topic != exp["topic"]:
+                errors.append(
+                    f"Fact {fact_id} topic mismatch: '{topic}' != '{exp['topic']}'"
+                )
+            if app_role != exp["applicable_role"]:
+                errors.append(
+                    f"Fact {fact_id} applicable_role mismatch: '{app_role}' != '{exp['applicable_role']}'"
+                )
 
-                if not topic:
-                    errors.append(f"Fact {fact_id} topic must not be empty")
+        if not topic:
+            errors.append(f"Fact {fact_id} topic must not be empty")
 
-                if not app_role:
-                    errors.append(f"Fact {fact_id} applicable_role must not be empty")
-                elif app_role != "all" and app_role not in VALID_ROLES:
-                    errors.append(f"Fact {fact_id} invalid applicable_role: {app_role}")
+        if not app_role:
+            errors.append(f"Fact {fact_id} applicable_role must not be empty")
+        elif app_role != "all" and app_role not in VALID_ROLES:
+            errors.append(f"Fact {fact_id} invalid applicable_role: {app_role}")
 
-                if not eff_from:
-                    errors.append(f"Fact {fact_id} missing effective_from date")
-                elif eff_from != "2026-11-01":
-                    errors.append(f"Fact {fact_id} effective_from must be '2026-11-01', got '{eff_from}'")
-                else:
-                    try:
-                        datetime.strptime(eff_from, "%Y-%m-%d")
-                    except ValueError:
-                        errors.append(f"Fact {fact_id} invalid effective_from format: '{eff_from}'")
+        if not eff_from:
+            errors.append(f"Fact {fact_id} missing effective_from date")
+        elif eff_from != "2026-11-01":
+            errors.append(f"Fact {fact_id} effective_from must be '2026-11-01', got '{eff_from}'")
+        else:
+            try:
+                datetime.strptime(eff_from, "%Y-%m-%d")
+            except ValueError:
+                errors.append(f"Fact {fact_id} invalid effective_from format: '{eff_from}'")
 
-                if eff_until:
-                    errors.append(f"Fact {fact_id} effective_until must be empty in v1, got '{eff_until}'")
+        if eff_until:
+            errors.append(f"Fact {fact_id} effective_until must be empty in v1, got '{eff_until}'")
 
-                doc_fact_count[source_doc] = doc_fact_count.get(source_doc, 0) + 1
-    except Exception as e:
-        errors.append(f"Failed to read fact_registry.csv: {e}")
+        doc_fact_count[source_doc] = doc_fact_count.get(source_doc, 0) + 1
 
     if len(fact_rows) != 72:
         errors.append(f"Expected 72 facts in registry, found {len(fact_rows)}")
