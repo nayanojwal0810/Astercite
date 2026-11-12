@@ -57,6 +57,153 @@ EXPECTED_TITLES = {
     "OPS-006": "Business Continuity & Facilities Procedure",
 }
 
+APPROVED_DOCUMENT_SPECS = {
+    "ENG-001": {
+        "classification": "department",
+        "owner_department": "engineering",
+        "allowed_roles": ["engineer", "team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ENG-002": {
+        "classification": "department",
+        "owner_department": "engineering",
+        "allowed_roles": ["engineer", "team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ENG-003": {
+        "classification": "department",
+        "owner_department": "engineering",
+        "allowed_roles": ["engineer", "team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ENG-004": {
+        "classification": "department",
+        "owner_department": "engineering",
+        "allowed_roles": ["engineer", "team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ENG-005": {
+        "classification": "department",
+        "owner_department": "engineering",
+        "allowed_roles": ["engineer", "it_support", "team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ENG-006": {
+        "classification": "restricted",
+        "owner_department": "engineering",
+        "allowed_roles": ["team_lead"],
+        "team_lead_departments": ["engineering"],
+    },
+    "ITS-001": {
+        "classification": "general",
+        "owner_department": "it_support",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "ITS-002": {
+        "classification": "restricted",
+        "owner_department": "it_support",
+        "allowed_roles": ["it_support", "hr_staff"],
+        "team_lead_departments": [],
+    },
+    "ITS-003": {
+        "classification": "general",
+        "owner_department": "it_support",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "ITS-004": {
+        "classification": "general",
+        "owner_department": "it_support",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "ITS-005": {
+        "classification": "general",
+        "owner_department": "it_support",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "ITS-006": {
+        "classification": "general",
+        "owner_department": "it_support",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "HR-001": {
+        "classification": "general",
+        "owner_department": "people_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "HR-002": {
+        "classification": "general",
+        "owner_department": "people_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "HR-003": {
+        "classification": "department",
+        "owner_department": "people_operations",
+        "allowed_roles": ["hr_staff", "it_support", "team_lead"],
+        "team_lead_departments": ["people_operations"],
+    },
+    "HR-004": {
+        "classification": "general",
+        "owner_department": "people_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "HR-005": {
+        "classification": "restricted",
+        "owner_department": "people_operations",
+        "allowed_roles": ["hr_staff", "team_lead"],
+        "team_lead_departments": ["people_operations"],
+    },
+    "HR-006": {
+        "classification": "general",
+        "owner_department": "people_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "OPS-001": {
+        "classification": "general",
+        "owner_department": "finance_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "OPS-002": {
+        "classification": "department",
+        "owner_department": "finance_operations",
+        "allowed_roles": ["finance_staff", "team_lead"],
+        "team_lead_departments": ["finance_operations"],
+    },
+    "OPS-003": {
+        "classification": "department",
+        "owner_department": "finance_operations",
+        "allowed_roles": ["finance_staff", "team_lead"],
+        "team_lead_departments": ["finance_operations"],
+    },
+    "OPS-004": {
+        "classification": "general",
+        "owner_department": "finance_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "OPS-005": {
+        "classification": "general",
+        "owner_department": "finance_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+    "OPS-006": {
+        "classification": "general",
+        "owner_department": "finance_operations",
+        "allowed_roles": GENERAL_ROLES,
+        "team_lead_departments": [],
+    },
+}
+
 EXPECTED_OUTLINE_TITLES = {
     "ENG-001": ("P1 Incident Acknowledgment", "P2 Incident Acknowledgment", "P1 Postmortem Requirements"),
     "ENG-002": ("Handover Schedule", "Handover Time", "Required Handover Information"),
@@ -85,94 +232,168 @@ EXPECTED_OUTLINE_TITLES = {
 }
 
 EXPECTED_FACTS = {
-    "ENG001_F01": {"source_doc_id": "ENG-001", "exact_value": "10", "unit": "minutes"},
-    "ENG001_F02": {"source_doc_id": "ENG-001", "exact_value": "30", "unit": "minutes"},
-    "ENG001_F03": {"source_doc_id": "ENG-001", "exact_value": "2", "unit": "business_days"},
-    "ENG002_F01": {"source_doc_id": "ENG-002", "exact_value": "Friday", "unit": ""},
-    "ENG002_F02": {"source_doc_id": "ENG-002", "exact_value": "18:00", "unit": "IST"},
-    "ENG002_F03": {"source_doc_id": "ENG-002", "exact_value": "open_incidents_owner_next_action", "unit": ""},
-    "ENG003_F01": {"source_doc_id": "ENG-003", "exact_value": "Tuesday_and_Thursday", "unit": ""},
-    "ENG003_F02": {"source_doc_id": "ENG-003", "exact_value": "14:00-17:00", "unit": "IST"},
-    "ENG003_F03": {"source_doc_id": "ENG-003", "exact_value": "error_rate_gt_5_percent_for_10_minutes", "unit": ""},
-    "ENG004_F01": {"source_doc_id": "ENG-004", "exact_value": "team_lead_and_service_owner", "unit": ""},
-    "ENG004_F02": {"source_doc_id": "ENG-004", "exact_value": "24", "unit": "hours"},
-    "ENG004_F03": {"source_doc_id": "ENG-004", "exact_value": "1", "unit": "business_days"},
-    "ENG005_F01": {"source_doc_id": "ENG-005", "exact_value": "expired_authentication_token_sign_in_again", "unit": ""},
-    "ENG005_F02": {"source_doc_id": "ENG-005", "exact_value": "60", "unit": "seconds"},
-    "ENG005_F03": {"source_doc_id": "ENG-005", "exact_value": "billing_sync_pending_check_reconciliation_status", "unit": ""},
-    "ENG006_F01": {"source_doc_id": "ENG-006", "exact_value": "platform_team", "unit": ""},
-    "ENG006_F02": {"source_doc_id": "ENG-006", "exact_value": "identity_team", "unit": ""},
-    "ENG006_F03": {"source_doc_id": "ENG-006", "exact_value": "payments_team", "unit": ""},
-    "ITS001_F01": {"source_doc_id": "ITS-001", "exact_value": "3", "unit": "business_days"},
-    "ITS001_F02": {"source_doc_id": "ITS-001", "exact_value": "1", "unit": "business_days"},
-    "ITS001_F03": {"source_doc_id": "ITS-001", "exact_value": "OPS-005_and_OPS-002", "unit": ""},
-    "ITS002_F01": {"source_doc_id": "ITS-002", "exact_value": "2", "unit": "business_days"},
-    "ITS002_F02": {"source_doc_id": "ITS-002", "exact_value": "4", "unit": "hours"},
-    "ITS002_F03": {"source_doc_id": "ITS-002", "exact_value": "hr_staff", "unit": ""},
-    "ITS003_F01": {"source_doc_id": "ITS-003", "exact_value": "identity_verification_and_service_ticket", "unit": ""},
-    "ITS003_F02": {"source_doc_id": "ITS-003", "exact_value": "4", "unit": "business_hours"},
-    "ITS003_F03": {"source_doc_id": "ITS-003", "exact_value": "prohibited", "unit": ""},
-    "ITS004_F01": {"source_doc_id": "ITS-004", "exact_value": "team_lead", "unit": ""},
-    "ITS004_F02": {"source_doc_id": "ITS-004", "exact_value": "security_review_required", "unit": ""},
-    "ITS004_F03": {"source_doc_id": "ITS-004", "exact_value": "3", "unit": "business_days"},
-    "ITS005_F01": {"source_doc_id": "ITS-005", "exact_value": "1", "unit": "hours"},
-    "ITS005_F02": {"source_doc_id": "ITS-005", "exact_value": "disable_device_access", "unit": ""},
-    "ITS005_F03": {"source_doc_id": "ITS-005", "exact_value": "it_support_ticket", "unit": ""},
-    "ITS006_F01": {"source_doc_id": "ITS-006", "exact_value": "15", "unit": "minutes"},
-    "ITS006_F02": {"source_doc_id": "ITS-006", "exact_value": "2", "unit": "business_hours"},
-    "ITS006_F03": {"source_doc_id": "ITS-006", "exact_value": "1", "unit": "business_days"},
-    "HR001_F01": {"source_doc_id": "HR-001", "exact_value": "18", "unit": "days_per_year"},
-    "HR001_F02": {"source_doc_id": "HR-001", "exact_value": "10", "unit": "days_per_year"},
-    "HR001_F03": {"source_doc_id": "HR-001", "exact_value": "3", "unit": "business_days"},
-    "HR002_F01": {"source_doc_id": "HR-002", "exact_value": "2", "unit": "days_per_week"},
-    "HR002_F02": {"source_doc_id": "HR-002", "exact_value": "team_lead", "unit": ""},
-    "HR002_F03": {"source_doc_id": "HR-002", "exact_value": "ITS-004_and_OPS-005", "unit": ""},
-    "HR003_F01": {"source_doc_id": "HR-003", "exact_value": "5", "unit": "business_days_before_join"},
-    "HR003_F02": {"source_doc_id": "HR-003", "exact_value": "ITS-002", "unit": ""},
-    "HR003_F03": {"source_doc_id": "HR-003", "exact_value": "ITS-001", "unit": ""},
-    "HR004_F01": {"source_doc_id": "HR-004", "exact_value": "20000", "unit": "inr"},
-    "HR004_F02": {"source_doc_id": "HR-004", "exact_value": "team_lead", "unit": ""},
-    "HR004_F03": {"source_doc_id": "HR-004", "exact_value": "30", "unit": "calendar_days"},
-    "HR005_F01": {"source_doc_id": "HR-005", "exact_value": "April_and_October", "unit": ""},
-    "HR005_F02": {"source_doc_id": "HR-005", "exact_value": "5", "unit": "business_days_before_review"},
-    "HR005_F03": {"source_doc_id": "HR-005", "exact_value": "hr_staff_and_team_lead", "unit": ""},
-    "HR006_F01": {"source_doc_id": "HR-006", "exact_value": "2", "unit": "business_days"},
-    "HR006_F02": {"source_doc_id": "HR-006", "exact_value": "10", "unit": "business_days"},
-    "HR006_F03": {"source_doc_id": "HR-006", "exact_value": "hr_staff_only", "unit": ""},
-    "OPS001_F01": {"source_doc_id": "OPS-001", "exact_value": "1500", "unit": "inr_per_day"},
-    "OPS001_F02": {"source_doc_id": "OPS-001", "exact_value": "required_before_booking", "unit": ""},
-    "OPS001_F03": {"source_doc_id": "OPS-001", "exact_value": "OPS-004", "unit": ""},
-    "OPS002_F01": {"source_doc_id": "OPS-002", "exact_value": "25000", "unit": "inr"},
-    "OPS002_F02": {"source_doc_id": "OPS-002", "exact_value": "above_25000_through_100000", "unit": ""},
-    "OPS002_F03": {"source_doc_id": "OPS-002", "exact_value": "finance_staff_and_team_lead_approval", "unit": ""},
-    "OPS003_F01": {"source_doc_id": "OPS-003", "exact_value": "5", "unit": "business_days"},
-    "OPS003_F02": {"source_doc_id": "OPS-003", "exact_value": "tax_registration_and_verified_bank_details", "unit": ""},
-    "OPS003_F03": {"source_doc_id": "OPS-003", "exact_value": "finance_staff", "unit": ""},
-    "OPS004_F01": {"source_doc_id": "OPS-004", "exact_value": "30", "unit": "calendar_days"},
-    "OPS004_F02": {"source_doc_id": "OPS-004", "exact_value": "500", "unit": "inr"},
-    "OPS004_F03": {"source_doc_id": "OPS-004", "exact_value": "5", "unit": "business_days"},
-    "OPS005_F01": {"source_doc_id": "OPS-005", "exact_value": "it_support", "unit": ""},
-    "OPS005_F02": {"source_doc_id": "OPS-005", "exact_value": "5", "unit": "business_days"},
-    "OPS005_F03": {"source_doc_id": "OPS-005", "exact_value": "OPS-002", "unit": ""},
-    "OPS006_F01": {"source_doc_id": "OPS-006", "exact_value": "6", "unit": "months"},
-    "OPS006_F02": {"source_doc_id": "OPS-006", "exact_value": "4", "unit": "hours"},
-    "OPS006_F03": {"source_doc_id": "OPS-006", "exact_value": "duty_team_lead", "unit": ""},
+    "ENG001_F01": {"source_doc_id": "ENG-001", "exact_value": "10", "unit": "minutes", "topic": "p1_incident_acknowledgment", "applicable_role": "engineer"},
+    "ENG001_F02": {"source_doc_id": "ENG-001", "exact_value": "30", "unit": "minutes", "topic": "p2_incident_acknowledgment", "applicable_role": "engineer"},
+    "ENG001_F03": {"source_doc_id": "ENG-001", "exact_value": "2", "unit": "business_days", "topic": "p1_incident_postmortem_deadline", "applicable_role": "engineer"},
+    "ENG002_F01": {"source_doc_id": "ENG-002", "exact_value": "Friday", "unit": "", "topic": "oncall_handover_day", "applicable_role": "engineer"},
+    "ENG002_F02": {"source_doc_id": "ENG-002", "exact_value": "18:00", "unit": "IST", "topic": "oncall_handover_time", "applicable_role": "engineer"},
+    "ENG002_F03": {"source_doc_id": "ENG-002", "exact_value": "open_incidents_owner_next_action", "unit": "", "topic": "required_handover_details", "applicable_role": "engineer"},
+    "ENG003_F01": {"source_doc_id": "ENG-003", "exact_value": "Tuesday_and_Thursday", "unit": "", "topic": "normal_deployment_days", "applicable_role": "engineer"},
+    "ENG003_F02": {"source_doc_id": "ENG-003", "exact_value": "14:00-17:00", "unit": "IST", "topic": "deployment_window", "applicable_role": "engineer"},
+    "ENG003_F03": {"source_doc_id": "ENG-003", "exact_value": "error_rate_gt_5_percent_for_10_minutes", "unit": "", "topic": "rollback_trigger", "applicable_role": "engineer"},
+    "ENG004_F01": {"source_doc_id": "ENG-004", "exact_value": "team_lead_and_service_owner", "unit": "", "topic": "high_risk_change_approvers", "applicable_role": "team_lead"},
+    "ENG004_F02": {"source_doc_id": "ENG-004", "exact_value": "24", "unit": "hours", "topic": "planned_migration_change_freeze_period", "applicable_role": "engineer"},
+    "ENG004_F03": {"source_doc_id": "ENG-004", "exact_value": "1", "unit": "business_days", "topic": "emergency_change_retrospective_approval_deadline", "applicable_role": "team_lead"},
+    "ENG005_F01": {"source_doc_id": "ENG-005", "exact_value": "expired_authentication_token_sign_in_again", "unit": "", "topic": "error_code_e1001", "applicable_role": "engineer"},
+    "ENG005_F02": {"source_doc_id": "ENG-005", "exact_value": "60", "unit": "seconds", "topic": "error_code_e2003_retry_delay", "applicable_role": "engineer"},
+    "ENG005_F03": {"source_doc_id": "ENG-005", "exact_value": "billing_sync_pending_check_reconciliation_status", "unit": "", "topic": "error_code_e3002", "applicable_role": "engineer"},
+    "ENG006_F01": {"source_doc_id": "ENG-006", "exact_value": "platform_team", "unit": "", "topic": "svc_portal_owner", "applicable_role": "team_lead"},
+    "ENG006_F02": {"source_doc_id": "ENG-006", "exact_value": "identity_team", "unit": "", "topic": "svc_auth_owner", "applicable_role": "team_lead"},
+    "ENG006_F03": {"source_doc_id": "ENG-006", "exact_value": "payments_team", "unit": "", "topic": "svc_billing_owner", "applicable_role": "team_lead"},
+    "ITS001_F01": {"source_doc_id": "ITS-001", "exact_value": "3", "unit": "business_days", "topic": "standard_laptop_provisioning_target", "applicable_role": "it_support"},
+    "ITS001_F02": {"source_doc_id": "ITS-001", "exact_value": "1", "unit": "business_days", "topic": "urgent_security_replacement_target", "applicable_role": "it_support"},
+    "ITS001_F03": {"source_doc_id": "ITS-001", "exact_value": "OPS-005_and_OPS-002", "unit": "", "topic": "laptop_purchase_policy_references", "applicable_role": "it_support"},
+    "ITS002_F01": {"source_doc_id": "ITS-002", "exact_value": "2", "unit": "business_days", "topic": "new_account_request_lead_time", "applicable_role": "it_support"},
+    "ITS002_F02": {"source_doc_id": "ITS-002", "exact_value": "4", "unit": "hours", "topic": "access_deactivation_after_exit", "applicable_role": "it_support"},
+    "ITS002_F03": {"source_doc_id": "ITS-002", "exact_value": "hr_staff", "unit": "", "topic": "account_provisioning_request_approval", "applicable_role": "hr_staff"},
+    "ITS003_F01": {"source_doc_id": "ITS-003", "exact_value": "identity_verification_and_service_ticket", "unit": "", "topic": "mfa_reset_requirements", "applicable_role": "it_support"},
+    "ITS003_F02": {"source_doc_id": "ITS-003", "exact_value": "4", "unit": "business_hours", "topic": "mfa_reset_resolution_target", "applicable_role": "it_support"},
+    "ITS003_F03": {"source_doc_id": "ITS-003", "exact_value": "prohibited", "unit": "", "topic": "sending_mfa_reset_codes_by_email", "applicable_role": "it_support"},
+    "ITS004_F01": {"source_doc_id": "ITS-004", "exact_value": "team_lead", "unit": "", "topic": "software_request_approver", "applicable_role": "team_lead"},
+    "ITS004_F02": {"source_doc_id": "ITS-004", "exact_value": "security_review_required", "unit": "", "topic": "unlisted_software_requirement", "applicable_role": "it_support"},
+    "ITS004_F03": {"source_doc_id": "ITS-004", "exact_value": "3", "unit": "business_days", "topic": "standard_software_request_target", "applicable_role": "it_support"},
+    "ITS005_F01": {"source_doc_id": "ITS-005", "exact_value": "1", "unit": "hours", "topic": "lost_device_reporting_deadline", "applicable_role": "all"},
+    "ITS005_F02": {"source_doc_id": "ITS-005", "exact_value": "disable_device_access", "unit": "", "topic": "it_response_after_verification", "applicable_role": "it_support"},
+    "ITS005_F03": {"source_doc_id": "ITS-005", "exact_value": "it_support_ticket", "unit": "", "topic": "required_incident_record", "applicable_role": "it_support"},
+    "ITS006_F01": {"source_doc_id": "ITS-006", "exact_value": "15", "unit": "minutes", "topic": "p1_ticket_response_target", "applicable_role": "it_support"},
+    "ITS006_F02": {"source_doc_id": "ITS-006", "exact_value": "2", "unit": "business_hours", "topic": "p2_ticket_response_target", "applicable_role": "it_support"},
+    "ITS006_F03": {"source_doc_id": "ITS-006", "exact_value": "1", "unit": "business_days", "topic": "p3_ticket_response_target", "applicable_role": "it_support"},
+    "HR001_F01": {"source_doc_id": "HR-001", "exact_value": "18", "unit": "days_per_year", "topic": "annual_leave_allowance", "applicable_role": "all"},
+    "HR001_F02": {"source_doc_id": "HR-001", "exact_value": "10", "unit": "days_per_year", "topic": "sick_leave_allowance", "applicable_role": "all"},
+    "HR001_F03": {"source_doc_id": "HR-001", "exact_value": "3", "unit": "business_days", "topic": "normal_leave_request_advance_period", "applicable_role": "all"},
+    "HR002_F01": {"source_doc_id": "HR-002", "exact_value": "2", "unit": "days_per_week", "topic": "minimum_office_attendance", "applicable_role": "all"},
+    "HR002_F02": {"source_doc_id": "HR-002", "exact_value": "team_lead", "unit": "", "topic": "remote_work_exception_approver", "applicable_role": "team_lead"},
+    "HR002_F03": {"source_doc_id": "HR-002", "exact_value": "ITS-004_and_OPS-005", "unit": "", "topic": "remote_work_equipment_references", "applicable_role": "all"},
+    "HR003_F01": {"source_doc_id": "HR-003", "exact_value": "5", "unit": "business_days_before_join", "topic": "onboarding_checklist_lead_time", "applicable_role": "hr_staff"},
+    "HR003_F02": {"source_doc_id": "HR-003", "exact_value": "ITS-002", "unit": "", "topic": "account_provisioning_reference", "applicable_role": "hr_staff"},
+    "HR003_F03": {"source_doc_id": "HR-003", "exact_value": "ITS-001", "unit": "", "topic": "laptop_provisioning_reference", "applicable_role": "hr_staff"},
+    "HR004_F01": {"source_doc_id": "HR-004", "exact_value": "20000", "unit": "inr", "topic": "annual_training_reimbursement_limit", "applicable_role": "all"},
+    "HR004_F02": {"source_doc_id": "HR-004", "exact_value": "team_lead", "unit": "", "topic": "training_approval_before_enrollment", "applicable_role": "team_lead"},
+    "HR004_F03": {"source_doc_id": "HR-004", "exact_value": "30", "unit": "calendar_days", "topic": "claim_submission_deadline_after_completion", "applicable_role": "all"},
+    "HR005_F01": {"source_doc_id": "HR-005", "exact_value": "April_and_October", "unit": "", "topic": "performance_review_months", "applicable_role": "hr_staff"},
+    "HR005_F02": {"source_doc_id": "HR-005", "exact_value": "5", "unit": "business_days_before_review", "topic": "goal_submission_lead_time", "applicable_role": "all"},
+    "HR005_F03": {"source_doc_id": "HR-005", "exact_value": "hr_staff_and_team_lead", "unit": "", "topic": "performance_review_document_access", "applicable_role": "hr_staff"},
+    "HR006_F01": {"source_doc_id": "HR-006", "exact_value": "2", "unit": "business_days", "topic": "grievance_acknowledgment_target", "applicable_role": "hr_staff"},
+    "HR006_F02": {"source_doc_id": "HR-006", "exact_value": "10", "unit": "business_days", "topic": "grievance_appeal_period", "applicable_role": "hr_staff"},
+    "HR006_F03": {"source_doc_id": "HR-006", "exact_value": "hr_staff_only", "unit": "", "topic": "private_grievance_case_access", "applicable_role": "hr_staff"},
+    "OPS001_F01": {"source_doc_id": "OPS-001", "exact_value": "1500", "unit": "inr_per_day", "topic": "domestic_travel_daily_allowance", "applicable_role": "all"},
+    "OPS001_F02": {"source_doc_id": "OPS-001", "exact_value": "required_before_booking", "unit": "", "topic": "travel_booking_approval", "applicable_role": "team_lead"},
+    "OPS001_F03": {"source_doc_id": "OPS-001", "exact_value": "OPS-004", "unit": "", "topic": "expense_claim_reference", "applicable_role": "all"},
+    "OPS002_F01": {"source_doc_id": "OPS-002", "exact_value": "25000", "unit": "inr", "topic": "max_purchase_team_lead_alone", "applicable_role": "team_lead"},
+    "OPS002_F02": {"source_doc_id": "OPS-002", "exact_value": "above_25000_through_100000", "unit": "", "topic": "finance_only_approval_range", "applicable_role": "finance_staff"},
+    "OPS002_F03": {"source_doc_id": "OPS-002", "exact_value": "finance_staff_and_team_lead_approval", "unit": "", "topic": "purchases_above_100000_approval", "applicable_role": "finance_staff"},
+    "OPS003_F01": {"source_doc_id": "OPS-003", "exact_value": "5", "unit": "business_days", "topic": "standard_vendor_onboarding_target", "applicable_role": "finance_staff"},
+    "OPS003_F02": {"source_doc_id": "OPS-003", "exact_value": "tax_registration_and_verified_bank_details", "unit": "", "topic": "required_vendor_documents", "applicable_role": "finance_staff"},
+    "OPS003_F03": {"source_doc_id": "OPS-003", "exact_value": "finance_staff", "unit": "", "topic": "approval_before_first_purchase", "applicable_role": "finance_staff"},
+    "OPS004_F01": {"source_doc_id": "OPS-004", "exact_value": "30", "unit": "calendar_days", "topic": "expense_claim_submission_deadline", "applicable_role": "all"},
+    "OPS004_F02": {"source_doc_id": "OPS-004", "exact_value": "500", "unit": "inr", "topic": "receipt_required_threshold", "applicable_role": "all"},
+    "OPS004_F03": {"source_doc_id": "OPS-004", "exact_value": "5", "unit": "business_days", "topic": "finance_claim_review_target", "applicable_role": "finance_staff"},
+    "OPS005_F01": {"source_doc_id": "OPS-005", "exact_value": "it_support", "unit": "", "topic": "company_asset_register_owner", "applicable_role": "it_support"},
+    "OPS005_F02": {"source_doc_id": "OPS-005", "exact_value": "5", "unit": "business_days", "topic": "assigned_equipment_return_after_exit", "applicable_role": "employee"},
+    "OPS005_F03": {"source_doc_id": "OPS-005", "exact_value": "OPS-002", "unit": "", "topic": "new_equipment_purchase_reference", "applicable_role": "all"},
+    "OPS006_F01": {"source_doc_id": "OPS-006", "exact_value": "6", "unit": "months", "topic": "business_continuity_test_frequency", "applicable_role": "team_lead"},
+    "OPS006_F02": {"source_doc_id": "OPS-006", "exact_value": "4", "unit": "hours", "topic": "critical_service_recovery_target", "applicable_role": "it_support"},
+    "OPS006_F03": {"source_doc_id": "OPS-006", "exact_value": "duty_team_lead", "unit": "", "topic": "continuity_escalation_contact", "applicable_role": "team_lead"},
+}
+
+EXPECTED_PLANNED_REVISIONS = {
+    "ENG-003": {
+        "base_version": "v1",
+        "target_version": "v2",
+        "changes": [
+            {
+                "fact_id": "ENG003_F03",
+                "old_value": "error_rate_gt_5_percent_for_10_minutes",
+                "new_value": "error_rate_gt_4_percent_for_10_minutes",
+                "unit": "",
+            }
+        ],
+    },
+    "HR-001": {
+        "base_version": "v1",
+        "target_version": "v2",
+        "changes": [
+            {
+                "fact_id": "HR001_F01",
+                "old_value": "18",
+                "new_value": "20",
+                "unit": "days_per_year",
+            }
+        ],
+    },
+    "OPS-002": {
+        "base_version": "v1",
+        "target_version": "v2",
+        "changes": [
+            {
+                "fact_id": "OPS002_F01",
+                "old_value": "25000",
+                "new_value": "30000",
+                "unit": "inr",
+            },
+            {
+                "fact_id": "OPS002_F02",
+                "old_value": "above_25000_through_100000",
+                "new_value": "above_30000_through_100000",
+                "unit": "",
+            },
+        ],
+    },
+}
+
+EXPECTED_RELATIONSHIPS = {
+    ("ITS-001", "OPS-005"),
+    ("OPS-005", "OPS-002"),
+    ("ENG-001", "ENG-002"),
+    ("ENG-002", "ENG-006"),
+    ("HR-003", "ITS-002"),
+    ("ITS-002", "ITS-001"),
+    ("HR-002", "ITS-004"),
+    ("ITS-004", "OPS-005"),
+    ("OPS-001", "OPS-004"),
+    ("OPS-004", "OPS-002"),
+    ("ENG-003", "ENG-004"),
+    ("HR-004", "OPS-004"),
 }
 
 
 def check_document_access(
-    doc_permissions: dict, user_roles: list[str], user_department: str | None = None
+    doc_permissions: dict,
+    user_roles: list[str],
+    classification: str,
+    user_department: str | None = None,
 ) -> bool:
     """Evaluate whether a user with given roles and optional department has read access."""
-    allowed_roles = set(doc_permissions.get("allowed_roles", []))
-    tl_depts = set(doc_permissions.get("team_lead_departments", []))
+    if not doc_permissions or not isinstance(doc_permissions, dict):
+        return False
+    if not user_roles or not isinstance(user_roles, (list, tuple, set)):
+        return False
+    if classification not in ("general", "department", "restricted"):
+        return False
+
+    allowed_roles = set(doc_permissions.get("allowed_roles") or [])
+    tl_depts = set(doc_permissions.get("team_lead_departments") or [])
 
     for role in user_roles:
+        if role == "document_admin":
+            continue
         if role not in allowed_roles:
             continue
         if role == "team_lead":
-            if not tl_depts:
+            if classification == "general":
                 return True
+            if not tl_depts:
+                continue
             if user_department and user_department in tl_depts:
                 return True
         else:
@@ -202,27 +423,31 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
     if errors:
         return errors
 
-    # 2. Parse company_spec.yaml
+    # 2. Parse YAML files with robust top-level structure validation
     company_data = None
     try:
         with open(spec_dir / "company_spec.yaml", "r", encoding="utf-8") as f:
             company_data = yaml.safe_load(f)
+        if company_data is None or not isinstance(company_data, dict):
+            errors.append("company_spec.yaml is empty or has invalid top-level structure")
     except Exception as e:
         errors.append(f"company_spec.yaml failed to parse: {e}")
 
-    # Parse access_policy.yaml
     policy_data = None
     try:
         with open(spec_dir / "access_policy.yaml", "r", encoding="utf-8") as f:
             policy_data = yaml.safe_load(f)
+        if policy_data is None or not isinstance(policy_data, dict):
+            errors.append("access_policy.yaml is empty or has invalid top-level structure")
     except Exception as e:
         errors.append(f"access_policy.yaml failed to parse: {e}")
 
-    # Parse document_outlines.yaml
     outlines_data = None
     try:
         with open(spec_dir / "document_outlines.yaml", "r", encoding="utf-8") as f:
             outlines_data = yaml.safe_load(f)
+        if outlines_data is None or not isinstance(outlines_data, list):
+            errors.append("document_outlines.yaml is empty or has invalid top-level structure")
     except Exception as e:
         errors.append(f"document_outlines.yaml failed to parse: {e}")
 
@@ -260,15 +485,25 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
                 "active_version",
                 "source_type",
             ]
+            if not reader.fieldnames:
+                errors.append("document_inventory.csv is empty or missing headers")
+                return errors
+            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
+            if missing_cols:
+                errors.append(f"document_inventory.csv missing required columns: {missing_cols}")
+                return errors
             if reader.fieldnames != expected_headers:
                 errors.append(f"document_inventory.csv headers mismatch: {reader.fieldnames}")
             for row in reader:
                 inventory_rows.append(row)
-                doc_id = row["document_id"]
+                doc_id = row.get("document_id", "").strip()
+                if not doc_id:
+                    errors.append("document_inventory.csv has row with empty document_id")
+                    continue
                 if doc_id in inventory_doc_ids:
                     errors.append(f"Duplicate document_id in inventory: {doc_id}")
                 inventory_doc_ids.add(doc_id)
-                owner = row["owner_department"]
+                owner = row.get("owner_department", "").strip()
                 dept_counts[owner] = dept_counts.get(owner, 0) + 1
     except Exception as e:
         errors.append(f"Failed to read document_inventory.csv: {e}")
@@ -280,118 +515,178 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
         if dept_counts.get(dept, 0) != 6:
             errors.append(f"Department {dept} has {dept_counts.get(dept, 0)} documents, expected 6")
 
-    policy_docs = policy_data.get("documents", {}) if policy_data else {}
+    policy_docs = policy_data.get("documents") if isinstance(policy_data, dict) else {}
+    if not isinstance(policy_docs, dict):
+        errors.append("access_policy.yaml missing documents mapping")
+        policy_docs = {}
 
     for row in inventory_rows:
-        doc_id = row["document_id"]
-        title = row["title"]
+        doc_id = row.get("document_id", "").strip()
+        title = row.get("title", "").strip()
+        if doc_id not in APPROVED_DOCUMENT_SPECS:
+            errors.append(f"Unknown or unapproved document_id in inventory: {doc_id}")
+            continue
+
+        app_spec = APPROVED_DOCUMENT_SPECS[doc_id]
+
         if doc_id in EXPECTED_TITLES and EXPECTED_TITLES[doc_id] != title:
             errors.append(f"Document {doc_id} has title '{title}', expected '{EXPECTED_TITLES[doc_id]}'")
-        if row["owner_department"] not in EXPECTED_DEPARTMENTS:
-            errors.append(f"Document {doc_id} has invalid owner_department: {row['owner_department']}")
-        if row["classification"] not in ["general", "department", "restricted"]:
-            errors.append(f"Document {doc_id} has invalid classification: {row['classification']}")
-        if row["active_version"] != "v1":
-            errors.append(f"Document {doc_id} active_version must be v1, got: {row['active_version']}")
-        planned_vers = row["planned_versions"].split("|")
+        if row.get("owner_department") != app_spec["owner_department"]:
+            errors.append(f"Document {doc_id} owner_department '{row.get('owner_department')}' != approved '{app_spec['owner_department']}'")
+        if row.get("classification") != app_spec["classification"]:
+            errors.append(f"Document {doc_id} classification '{row.get('classification')}' != approved '{app_spec['classification']}'")
+        if row.get("active_version") != "v1":
+            errors.append(f"Document {doc_id} active_version must be v1, got: {row.get('active_version')}")
+
+        planned_vers = row.get("planned_versions", "").split("|")
         if "v1" not in planned_vers:
             errors.append(f"Document {doc_id} planned_versions does not contain active version v1")
         if doc_id in ["ENG-003", "HR-001", "OPS-002"]:
-            if row["planned_versions"] != "v1|v2":
-                errors.append(f"Document {doc_id} expected planned_versions 'v1|v2', got '{row['planned_versions']}'")
+            if row.get("planned_versions") != "v1|v2":
+                errors.append(f"Document {doc_id} expected planned_versions 'v1|v2', got '{row.get('planned_versions')}'")
         else:
-            if row["planned_versions"] != "v1":
-                errors.append(f"Document {doc_id} expected planned_versions 'v1', got '{row['planned_versions']}'")
-        if row["source_type"] != "synthetic":
-            errors.append(f"Document {doc_id} source_type must be synthetic, got: {row['source_type']}")
+            if row.get("planned_versions") != "v1":
+                errors.append(f"Document {doc_id} expected planned_versions 'v1', got '{row.get('planned_versions')}'")
+        if row.get("source_type") != "synthetic":
+            errors.append(f"Document {doc_id} source_type must be synthetic, got: {row.get('source_type')}")
 
-        # Allowed roles
-        allowed_roles = row["allowed_roles"].split("|")
-        for r in allowed_roles:
+        # Allowed roles in inventory
+        allowed_roles_str = row.get("allowed_roles", "").strip()
+        inv_roles = allowed_roles_str.split("|") if allowed_roles_str else []
+        if len(inv_roles) != len(set(inv_roles)):
+            errors.append(f"Document {doc_id} inventory has duplicate allowed roles: {inv_roles}")
+        for r in inv_roles:
             if r not in VALID_ROLES:
-                errors.append(f"Document {doc_id} has invalid role: {r}")
-        if "document_admin" in allowed_roles:
-            errors.append(f"Document {doc_id} must not grant content access to document_admin")
+                errors.append(f"Document {doc_id} inventory has invalid role: {r}")
+        if "document_admin" in inv_roles:
+            errors.append(f"Document {doc_id} inventory must not grant reading access to document_admin")
 
-        if row["classification"] == "general":
-            if allowed_roles != GENERAL_ROLES:
-                errors.append(f"General document {doc_id} allowed_roles mismatch: {allowed_roles}")
-            if row["team_lead_departments"]:
-                errors.append(f"General document {doc_id} must have empty team_lead_departments")
-        else:
-            if "team_lead" in allowed_roles:
-                if not row["team_lead_departments"]:
-                    errors.append(f"Protected document {doc_id} allowing team_lead must have team_lead_departments")
-                elif row["team_lead_departments"] not in EXPECTED_DEPARTMENTS:
-                    errors.append(f"Protected document {doc_id} has invalid team_lead_departments: {row['team_lead_departments']}")
+        if inv_roles != app_spec["allowed_roles"]:
+            errors.append(f"Document {doc_id} inventory allowed_roles {inv_roles} != approved {app_spec['allowed_roles']}")
 
-        # Check matching access_policy.yaml
+        # Team lead departments in inventory
+        inv_tl_depts_str = row.get("team_lead_departments", "").strip()
+        inv_tl_depts = [inv_tl_depts_str] if inv_tl_depts_str else []
+        if inv_tl_depts != app_spec["team_lead_departments"]:
+            errors.append(f"Document {doc_id} inventory team_lead_departments {inv_tl_depts} != approved {app_spec['team_lead_departments']}")
+
+        # Compare with access_policy.yaml
         if doc_id not in policy_docs:
             errors.append(f"Document {doc_id} missing in access_policy.yaml")
         else:
-            p_allowed = policy_docs[doc_id].get("allowed_roles", [])
-            if p_allowed != allowed_roles:
-                errors.append(f"Document {doc_id} allowed_roles in policy {p_allowed} != inventory {allowed_roles}")
-            p_tl_depts = policy_docs[doc_id].get("team_lead_departments", [])
-            inv_tl_depts = [row["team_lead_departments"]] if row["team_lead_departments"] else []
-            if p_tl_depts != inv_tl_depts:
-                errors.append(f"Document {doc_id} team_lead_departments in policy {p_tl_depts} != inventory {inv_tl_depts}")
+            p_entry = policy_docs[doc_id]
+            if not isinstance(p_entry, dict):
+                errors.append(f"Document {doc_id} in access_policy.yaml must be a dictionary")
+                continue
+            p_allowed = p_entry.get("allowed_roles")
+            if p_allowed is None or not isinstance(p_allowed, list):
+                errors.append(f"Document {doc_id} policy missing allowed_roles list")
+            else:
+                if len(p_allowed) != len(set(p_allowed)):
+                    errors.append(f"Document {doc_id} policy has duplicate allowed roles: {p_allowed}")
+                for r in p_allowed:
+                    if r not in VALID_ROLES:
+                        errors.append(f"Document {doc_id} policy has invalid role: {r}")
+                if "document_admin" in p_allowed:
+                    errors.append(f"Document {doc_id} policy must not grant reading access to document_admin")
+                if p_allowed != app_spec["allowed_roles"]:
+                    errors.append(f"Document {doc_id} policy allowed_roles {p_allowed} != approved {app_spec['allowed_roles']}")
+                if p_allowed != inv_roles:
+                    errors.append(f"Document {doc_id} allowed_roles in policy {p_allowed} != inventory {inv_roles}")
+
+            p_tl_depts = p_entry.get("team_lead_departments")
+            if p_tl_depts is None or not isinstance(p_tl_depts, list):
+                errors.append(f"Document {doc_id} policy missing team_lead_departments list")
+            else:
+                if p_tl_depts != app_spec["team_lead_departments"]:
+                    errors.append(f"Document {doc_id} policy team_lead_departments {p_tl_depts} != approved {app_spec['team_lead_departments']}")
+                if p_tl_depts != inv_tl_depts:
+                    errors.append(f"Document {doc_id} team_lead_departments in policy {p_tl_depts} != inventory {inv_tl_depts}")
+
+    for p_doc_id in policy_docs:
+        if p_doc_id not in APPROVED_DOCUMENT_SPECS:
+            errors.append(f"Unknown document_id in access_policy.yaml: {p_doc_id}")
 
     # 5. Access policy checks & department-scoped security evaluation
     if policy_data.get("default_access") != "deny":
         errors.append("access_policy.yaml default_access must be deny")
 
     # Security tests on policy data
-    # Test: unrelated team lead cannot access protected documents
-    if not check_document_access(policy_docs.get("ENG-006", {}), ["team_lead"], "engineering"):
+    if not check_document_access(policy_docs.get("ENG-006", {}), ["team_lead"], "restricted", "engineering"):
         errors.append("Security check failed: Engineering team lead should access ENG-006")
-    if check_document_access(policy_docs.get("ENG-006", {}), ["team_lead"], "finance_operations"):
+    if check_document_access(policy_docs.get("ENG-006", {}), ["team_lead"], "restricted", "finance_operations"):
         errors.append("Security check failed: Finance team lead should NOT access ENG-006")
-    if check_document_access(policy_docs.get("HR-005", {}), ["team_lead"], "engineering"):
+    if check_document_access(policy_docs.get("HR-005", {}), ["team_lead"], "restricted", "engineering"):
         errors.append("Security check failed: Engineering team lead should NOT access HR-005")
-    if check_document_access(policy_docs.get("OPS-002", {}), ["team_lead"], "engineering"):
+    if check_document_access(policy_docs.get("OPS-002", {}), ["team_lead"], "department", "engineering"):
         errors.append("Security check failed: Engineering team lead should NOT access OPS-002")
-    if not check_document_access(policy_docs.get("ITS-001", {}), ["team_lead"], "engineering"):
+    if not check_document_access(policy_docs.get("ITS-001", {}), ["team_lead"], "general", "engineering"):
         errors.append("Security check failed: Team lead should access general document ITS-001")
-    if check_document_access(policy_docs.get("ENG-006", {}), ["document_admin"]):
+    if check_document_access(policy_docs.get("ENG-006", {}), ["document_admin"], "restricted"):
         errors.append("Security check failed: document_admin alone should NOT read ENG-006")
 
     # 6. Cross references checks
     rel_rows = []
+    seen_pairs = set()
     doc_relationships: dict[str, set[str]] = {doc_id: set() for doc_id in inventory_doc_ids}
     try:
         with open(spec_dir / "cross_references.csv", "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             expected_headers = ["from_doc", "to_doc", "relationship", "explanation"]
+            if not reader.fieldnames:
+                errors.append("cross_references.csv is empty or missing headers")
+                return errors
+            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
+            if missing_cols:
+                errors.append(f"cross_references.csv missing required columns: {missing_cols}")
+                return errors
             if reader.fieldnames != expected_headers:
                 errors.append(f"cross_references.csv headers mismatch: {reader.fieldnames}")
-            seen_pairs = set()
+
             for row in reader:
                 rel_rows.append(row)
-                from_doc = row["from_doc"]
-                to_doc = row["to_doc"]
-                if from_doc == to_doc:
-                    errors.append(f"Self-referencing relationship in cross_references.csv: {from_doc}")
-                pair = (from_doc, to_doc)
-                if pair in seen_pairs:
-                    errors.append(f"Duplicate relationship: {from_doc} -> {to_doc}")
-                seen_pairs.add(pair)
+                from_doc = row.get("from_doc", "").strip()
+                to_doc = row.get("to_doc", "").strip()
+
+                if not from_doc or not to_doc:
+                    errors.append("cross_references.csv contains row with empty from_doc or to_doc")
+                    continue
+
                 if from_doc not in inventory_doc_ids:
                     errors.append(f"cross_references from_doc not in inventory: {from_doc}")
                 if to_doc not in inventory_doc_ids:
                     errors.append(f"cross_references to_doc not in inventory: {to_doc}")
-                doc_relationships[from_doc].add(to_doc)
-                doc_relationships[to_doc].add(from_doc)
+
+                if from_doc == to_doc:
+                    errors.append(f"Self-referencing relationship in cross_references.csv: {from_doc}")
+
+                pair = (from_doc, to_doc)
+                if pair in seen_pairs:
+                    errors.append(f"Duplicate relationship: {from_doc} -> {to_doc}")
+                seen_pairs.add(pair)
+
+                if pair not in EXPECTED_RELATIONSHIPS:
+                    errors.append(f"Unapproved relationship pair: {from_doc} -> {to_doc}")
+
+                if from_doc in doc_relationships and to_doc in inventory_doc_ids:
+                    doc_relationships[from_doc].add(to_doc)
+                if to_doc in doc_relationships and from_doc in inventory_doc_ids:
+                    doc_relationships[to_doc].add(from_doc)
     except Exception as e:
         errors.append(f"Failed to read cross_references.csv: {e}")
 
     if len(rel_rows) != 12:
         errors.append(f"Expected 12 relationships in cross_references.csv, found {len(rel_rows)}")
 
+    missing_pairs = EXPECTED_RELATIONSHIPS - seen_pairs
+    if missing_pairs:
+        for mp in sorted(missing_pairs):
+            errors.append(f"Missing required relationship pair: {mp[0]} -> {mp[1]}")
+
     # Check symmetric related_documents in inventory
     for row in inventory_rows:
-        doc_id = row["document_id"]
-        rel_field = row["related_documents"].strip()
+        doc_id = row.get("document_id", "").strip()
+        rel_field = row.get("related_documents", "").strip()
         inv_related = set(rel_field.split("|")) if rel_field else set()
         expected_related = doc_relationships.get(doc_id, set())
         if inv_related != expected_related:
@@ -417,13 +712,28 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
                 "effective_from",
                 "effective_until",
             ]
+            if not reader.fieldnames:
+                errors.append("fact_registry.csv is empty or missing headers")
+                return errors
+            missing_cols = [c for c in expected_headers if c not in reader.fieldnames]
+            if missing_cols:
+                errors.append(f"fact_registry.csv missing required columns: {missing_cols}")
+                return errors
             if reader.fieldnames != expected_headers:
                 errors.append(f"fact_registry.csv headers mismatch: {reader.fieldnames}")
+
             for row in reader:
                 fact_rows.append(row)
-                fact_id = row["fact_id"]
-                doc_version = row["document_version"]
-                source_doc = row["source_doc_id"]
+                fact_id = row.get("fact_id", "").strip()
+                doc_version = row.get("document_version", "").strip()
+                source_doc = row.get("source_doc_id", "").strip()
+                topic = row.get("topic", "").strip()
+                exact_value = row.get("exact_value", "").strip()
+                unit = row.get("unit", "").strip()
+                app_role = row.get("applicable_role", "").strip()
+                eff_from = row.get("effective_from", "").strip()
+                eff_until = row.get("effective_until", "").strip()
+
                 key = (fact_id, doc_version)
                 if key in seen_facts:
                     errors.append(f"Duplicate fact key (fact_id, document_version): {key}")
@@ -444,29 +754,43 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
                         errors.append(
                             f"Fact {fact_id} source_doc_id mismatch: '{source_doc}' != '{exp['source_doc_id']}'"
                         )
-                    if row["exact_value"] != exp["exact_value"]:
+                    if exact_value != exp["exact_value"]:
                         errors.append(
-                            f"Fact {fact_id} exact_value mismatch: '{row['exact_value']}' != '{exp['exact_value']}'"
+                            f"Fact {fact_id} exact_value mismatch: '{exact_value}' != '{exp['exact_value']}'"
                         )
-                    if row["unit"] != exp["unit"]:
+                    if unit != exp["unit"]:
                         errors.append(
-                            f"Fact {fact_id} unit mismatch: '{row['unit']}' != '{exp['unit']}'"
+                            f"Fact {fact_id} unit mismatch: '{unit}' != '{exp['unit']}'"
+                        )
+                    if topic != exp["topic"]:
+                        errors.append(
+                            f"Fact {fact_id} topic mismatch: '{topic}' != '{exp['topic']}'"
+                        )
+                    if app_role != exp["applicable_role"]:
+                        errors.append(
+                            f"Fact {fact_id} applicable_role mismatch: '{app_role}' != '{exp['applicable_role']}'"
                         )
 
-                if not row["topic"]:
+                if not topic:
                     errors.append(f"Fact {fact_id} topic must not be empty")
 
-                app_role = row["applicable_role"]
-                if app_role != "all" and app_role not in VALID_ROLES:
+                if not app_role:
+                    errors.append(f"Fact {fact_id} applicable_role must not be empty")
+                elif app_role != "all" and app_role not in VALID_ROLES:
                     errors.append(f"Fact {fact_id} invalid applicable_role: {app_role}")
 
-                try:
-                    datetime.strptime(row["effective_from"], "%Y-%m-%d")
-                except ValueError:
-                    errors.append(f"Fact {fact_id} invalid effective_from date: {row['effective_from']}")
+                if not eff_from:
+                    errors.append(f"Fact {fact_id} missing effective_from date")
+                elif eff_from != "2026-11-01":
+                    errors.append(f"Fact {fact_id} effective_from must be '2026-11-01', got '{eff_from}'")
+                else:
+                    try:
+                        datetime.strptime(eff_from, "%Y-%m-%d")
+                    except ValueError:
+                        errors.append(f"Fact {fact_id} invalid effective_from format: '{eff_from}'")
 
-                if row["effective_until"]:
-                    errors.append(f"Fact {fact_id} effective_until should be empty in v1")
+                if eff_until:
+                    errors.append(f"Fact {fact_id} effective_until must be empty in v1, got '{eff_until}'")
 
                 doc_fact_count[source_doc] = doc_fact_count.get(source_doc, 0) + 1
     except Exception as e:
@@ -484,35 +808,84 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             errors.append(f"Missing required v1 fact: {exp_id}")
 
     # 8. Planned revisions checks
-    planned_revs = company_data.get("planned_revisions", []) if company_data else []
-    if len(planned_revs) != 3:
-        errors.append(f"Expected 3 planned revisions, found {len(planned_revs)}")
+    planned_revs = company_data.get("planned_revisions") if isinstance(company_data, dict) else None
+    if not isinstance(planned_revs, list):
+        errors.append("company_spec.yaml planned_revisions must be a list")
+    else:
+        if len(planned_revs) != 3:
+            errors.append(f"Expected 3 planned revisions, found {len(planned_revs)}")
 
-    allowed_rev_docs = {"ENG-003", "HR-001", "OPS-002"}
-    seen_rev_docs = set()
-    for rev in planned_revs:
-        doc_id = rev.get("document_id")
-        seen_rev_docs.add(doc_id)
-        if doc_id not in allowed_rev_docs:
-            errors.append(f"Unapproved document in planned_revisions: {doc_id}")
-        if rev.get("base_version") != "v1":
-            errors.append(f"Revision for {doc_id} base_version must be v1, got: {rev.get('base_version')}")
-        if rev.get("target_version") != "v2":
-            errors.append(f"Revision for {doc_id} target_version must be v2, got: {rev.get('target_version')}")
+        seen_rev_docs = set()
+        for rev in planned_revs:
+            if not isinstance(rev, dict):
+                errors.append("Planned revision entry must be a dictionary")
+                continue
+            doc_id = rev.get("document_id")
+            if not doc_id:
+                errors.append("Planned revision missing document_id")
+                continue
+            if doc_id in seen_rev_docs:
+                errors.append(f"Duplicate planned revision for document: {doc_id}")
+            seen_rev_docs.add(doc_id)
 
-        for change in rev.get("changes", []):
-            f_id = change.get("fact_id")
-            if f_id not in EXPECTED_FACTS:
-                errors.append(f"Revision for {doc_id} references unknown fact: {f_id}")
-            else:
-                exp_fact = EXPECTED_FACTS[f_id]
-                if change.get("old_value") != exp_fact["exact_value"]:
-                    errors.append(
-                        f"Revision for {doc_id} old_value '{change.get('old_value')}' != v1 fact value '{exp_fact['exact_value']}'"
-                    )
+            if doc_id not in EXPECTED_PLANNED_REVISIONS:
+                errors.append(f"Unapproved document in planned_revisions: {doc_id}")
+                continue
 
-    if seen_rev_docs != allowed_rev_docs:
-        errors.append(f"Planned revisions document set mismatch: {seen_rev_docs} != {allowed_rev_docs}")
+            exp_rev = EXPECTED_PLANNED_REVISIONS[doc_id]
+            if rev.get("base_version") != exp_rev["base_version"]:
+                errors.append(f"Revision for {doc_id} base_version must be '{exp_rev['base_version']}', got: {rev.get('base_version')}")
+            if rev.get("target_version") != exp_rev["target_version"]:
+                errors.append(f"Revision for {doc_id} target_version must be '{exp_rev['target_version']}', got: {rev.get('target_version')}")
+
+            changes = rev.get("changes")
+            if not isinstance(changes, list):
+                errors.append(f"Revision for {doc_id} changes must be a list")
+                continue
+
+            exp_changes = exp_rev["changes"]
+            if len(changes) != len(exp_changes):
+                errors.append(f"Revision for {doc_id} expected {len(exp_changes)} change(s), found {len(changes)}")
+
+            seen_change_facts = set()
+            for idx, change in enumerate(changes):
+                if not isinstance(change, dict):
+                    errors.append(f"Revision for {doc_id} change {idx} must be a dictionary")
+                    continue
+                f_id = change.get("fact_id")
+                if not f_id:
+                    errors.append(f"Revision for {doc_id} change {idx} missing fact_id")
+                    continue
+                if f_id in seen_change_facts:
+                    errors.append(f"Revision for {doc_id} has duplicate change for fact: {f_id}")
+                seen_change_facts.add(f_id)
+
+                matching_exp = next((c for c in exp_changes if c["fact_id"] == f_id), None)
+                if not matching_exp:
+                    errors.append(f"Revision for {doc_id} contains unexpected changed fact: {f_id}")
+                else:
+                    old_val = str(change.get("old_value", ""))
+                    new_val = str(change.get("new_value", ""))
+                    unit_val = str(change.get("unit") or "")
+
+                    if old_val != matching_exp["old_value"]:
+                        errors.append(f"Revision for {doc_id} fact {f_id} old_value mismatch: '{old_val}' != '{matching_exp['old_value']}'")
+                    if new_val != matching_exp["new_value"]:
+                        errors.append(f"Revision for {doc_id} fact {f_id} new_value mismatch: '{new_val}' != '{matching_exp['new_value']}'")
+                    if unit_val != matching_exp["unit"]:
+                        errors.append(f"Revision for {doc_id} fact {f_id} unit mismatch: '{unit_val}' != '{matching_exp['unit']}'")
+
+                    if f_id in EXPECTED_FACTS and old_val != EXPECTED_FACTS[f_id]["exact_value"]:
+                        errors.append(f"Revision for {doc_id} fact {f_id} old_value does not match v1 fact exact_value")
+                    if f_id in EXPECTED_FACTS and EXPECTED_FACTS[f_id]["source_doc_id"] != doc_id:
+                        errors.append(f"Revision for {doc_id} references fact {f_id} belonging to {EXPECTED_FACTS[f_id]['source_doc_id']}")
+
+            for exp_c in exp_changes:
+                if exp_c["fact_id"] not in seen_change_facts:
+                    errors.append(f"Revision for {doc_id} missing required change for fact: {exp_c['fact_id']}")
+
+        if seen_rev_docs != set(EXPECTED_PLANNED_REVISIONS.keys()):
+            errors.append(f"Planned revisions document set mismatch: {seen_rev_docs} != {set(EXPECTED_PLANNED_REVISIONS.keys())}")
 
     # 9. Content outline checks
     if not isinstance(outlines_data, list):
@@ -523,7 +896,13 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
 
         seen_outline_docs = set()
         for outline in outlines_data:
+            if not isinstance(outline, dict):
+                errors.append("Document outline entry must be a dictionary")
+                continue
             doc_id = outline.get("document_id")
+            if not doc_id:
+                errors.append("Document outline missing document_id")
+                continue
             if doc_id in seen_outline_docs:
                 errors.append(f"Duplicate outline for document: {doc_id}")
             seen_outline_docs.add(doc_id)
@@ -534,47 +913,65 @@ def validate_dataset(spec_dir_path: Path | str = "data/spec") -> list[str]:
             if outline.get("document_version") != "v1":
                 errors.append(f"Outline for {doc_id} document_version must be v1, got {outline.get('document_version')}")
 
-            sections = outline.get("sections", [])
+            sections = outline.get("sections")
+            if not isinstance(sections, list):
+                errors.append(f"Outline for {doc_id} sections must be a list")
+                continue
+
             if len(sections) != 6:
                 errors.append(f"Outline for {doc_id} must have 6 sections, found {len(sections)}")
+                continue
 
             expected_sec_ids = ["S01", "S02", "S03", "S04", "S05", "S06"]
-            actual_sec_ids = [s.get("section_id") for s in sections]
+            actual_sec_ids = [s.get("section_id") if isinstance(s, dict) else None for s in sections]
             if actual_sec_ids != expected_sec_ids:
                 errors.append(f"Outline for {doc_id} sections order mismatch: {actual_sec_ids} != {expected_sec_ids}")
 
             if doc_id in EXPECTED_OUTLINE_TITLES:
                 exp_t2, exp_t3, exp_t4 = EXPECTED_OUTLINE_TITLES[doc_id]
-                if sections[0].get("title") != "Purpose and Scope":
-                    errors.append(f"Outline {doc_id} S01 title mismatch: '{sections[0].get('title')}'")
-                if sections[1].get("title") != exp_t2:
-                    errors.append(f"Outline {doc_id} S02 title mismatch: '{sections[1].get('title')}' != '{exp_t2}'")
-                if sections[2].get("title") != exp_t3:
-                    errors.append(f"Outline {doc_id} S03 title mismatch: '{sections[2].get('title')}' != '{exp_t3}'")
-                if sections[3].get("title") != exp_t4:
-                    errors.append(f"Outline {doc_id} S04 title mismatch: '{sections[3].get('title')}' != '{exp_t4}'")
-                if sections[4].get("title") != "Exceptions and Related Documents":
-                    errors.append(f"Outline {doc_id} S05 title mismatch: '{sections[4].get('title')}'")
-                if sections[5].get("title") != "Revision History":
-                    errors.append(f"Outline {doc_id} S06 title mismatch: '{sections[5].get('title')}'")
+                s0_title = sections[0].get("title") if isinstance(sections[0], dict) else None
+                s1_title = sections[1].get("title") if isinstance(sections[1], dict) else None
+                s2_title = sections[2].get("title") if isinstance(sections[2], dict) else None
+                s3_title = sections[3].get("title") if isinstance(sections[3], dict) else None
+                s4_title = sections[4].get("title") if isinstance(sections[4], dict) else None
+                s5_title = sections[5].get("title") if isinstance(sections[5], dict) else None
 
-            # Check fact placements
+                if s0_title != "Purpose and Scope":
+                    errors.append(f"Outline {doc_id} S01 title mismatch: '{s0_title}'")
+                if s1_title != exp_t2:
+                    errors.append(f"Outline {doc_id} S02 title mismatch: '{s1_title}' != '{exp_t2}'")
+                if s2_title != exp_t3:
+                    errors.append(f"Outline {doc_id} S03 title mismatch: '{s2_title}' != '{exp_t3}'")
+                if s3_title != exp_t4:
+                    errors.append(f"Outline {doc_id} S04 title mismatch: '{s3_title}' != '{exp_t4}'")
+                if s4_title != "Exceptions and Related Documents":
+                    errors.append(f"Outline {doc_id} S05 title mismatch: '{s4_title}'")
+                if s5_title != "Revision History":
+                    errors.append(f"Outline {doc_id} S06 title mismatch: '{s5_title}'")
+
             prefix = doc_id.replace("-", "")
             exp_f01 = f"{prefix}_F01"
             exp_f02 = f"{prefix}_F02"
             exp_f03 = f"{prefix}_F03"
 
-            if sections[0].get("fact_ids") != []:
+            s0_facts = sections[0].get("fact_ids") if isinstance(sections[0], dict) else None
+            s1_facts = sections[1].get("fact_ids") if isinstance(sections[1], dict) else None
+            s2_facts = sections[2].get("fact_ids") if isinstance(sections[2], dict) else None
+            s3_facts = sections[3].get("fact_ids") if isinstance(sections[3], dict) else None
+            s4_facts = sections[4].get("fact_ids") if isinstance(sections[4], dict) else None
+            s5_facts = sections[5].get("fact_ids") if isinstance(sections[5], dict) else None
+
+            if s0_facts != []:
                 errors.append(f"Outline {doc_id} S01 fact_ids must be empty")
-            if sections[1].get("fact_ids") != [exp_f01]:
-                errors.append(f"Outline {doc_id} S02 fact_ids mismatch: {sections[1].get('fact_ids')} != [{exp_f01}]")
-            if sections[2].get("fact_ids") != [exp_f02]:
-                errors.append(f"Outline {doc_id} S03 fact_ids mismatch: {sections[2].get('fact_ids')} != [{exp_f02}]")
-            if sections[3].get("fact_ids") != [exp_f03]:
-                errors.append(f"Outline {doc_id} S04 fact_ids mismatch: {sections[3].get('fact_ids')} != [{exp_f03}]")
-            if sections[4].get("fact_ids") != []:
+            if s1_facts != [exp_f01]:
+                errors.append(f"Outline {doc_id} S02 fact_ids mismatch: {s1_facts} != [{exp_f01}]")
+            if s2_facts != [exp_f02]:
+                errors.append(f"Outline {doc_id} S03 fact_ids mismatch: {s2_facts} != [{exp_f02}]")
+            if s3_facts != [exp_f03]:
+                errors.append(f"Outline {doc_id} S04 fact_ids mismatch: {s3_facts} != [{exp_f03}]")
+            if s4_facts != []:
                 errors.append(f"Outline {doc_id} S05 fact_ids must be empty")
-            if sections[5].get("fact_ids") != []:
+            if s5_facts != []:
                 errors.append(f"Outline {doc_id} S06 fact_ids must be empty")
 
     return errors
