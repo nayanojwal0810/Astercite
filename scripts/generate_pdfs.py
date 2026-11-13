@@ -223,10 +223,26 @@ def build_pdf(
 
     class DocCanvas(NumberedCanvas):
         def __init__(self, *args, **kwargs):
+            kwargs["invariant"] = 1
             super().__init__(*args, **kwargs)
             self.set_doc_id(doc_id)
 
     doc.build(story, canvasmaker=DocCanvas)
+
+
+def _get_temp_dir_on_same_volume(target_dir: Path, prefix: str) -> Path:
+    """Create a temporary directory outside the repository on the same volume as target_dir."""
+    resolved_target = target_dir.resolve()
+    drive = resolved_target.anchor
+    sys_temp = Path(tempfile.gettempdir()).resolve()
+
+    if sys_temp.anchor.lower() == drive.lower() and not sys_temp.is_relative_to(PROJECT_ROOT):
+        base_temp = sys_temp
+    else:
+        base_temp = Path(drive) / "temp"
+        base_temp.mkdir(parents=True, exist_ok=True)
+
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=base_temp))
 
 
 def generate_all_pdfs(
@@ -234,7 +250,7 @@ def generate_all_pdfs(
     output_dir_path: Path | str | None = None,
     spec_dir_path: Path | str | None = None,
 ) -> list[Path]:
-    """Validate source Markdown, generate 24 PDFs in staging, validate, and publish."""
+    """Validate source Markdown, generate 24 PDFs in staging, validate, and publish safely."""
     # Late import to prevent circular dependency
     from scripts.validate_pdfs import validate_pdfs
 
@@ -252,17 +268,49 @@ def generate_all_pdfs(
 
     # Step 2: Read document inventory
     inv_file = spec_dir / "document_inventory.csv"
+    if not inv_file.exists():
+        raise FileNotFoundError(f"Missing inventory file: {inv_file}")
+
     with open(inv_file, encoding="utf-8") as f:
         inventory = {r["document_id"]: r for r in csv.DictReader(f)}
 
     if len(inventory) != 24:
         raise ValueError(f"Expected 24 documents in inventory, found {len(inventory)}")
 
-    # Step 3: Create temporary staging directory outside repository
-    staging_dir = Path(tempfile.mkdtemp(prefix="astercite_pdf_staging_"))
+    # Compute expected relative paths
+    expected_rel_paths: set[Path] = set()
+    for doc_id, meta in inventory.items():
+        dept = meta["owner_department"]
+        pdf_name = f"{doc_id.lower().replace('-', '_')}_v1.pdf"
+        expected_rel_paths.add(Path(dept) / pdf_name)
+
+    # Safety check on destination before touching anything:
+    # Refuse unsafe replacement if unexpected files exist in destination
+    if output_dir.exists():
+        unexpected_files: list[str] = []
+        for p in output_dir.rglob("*"):
+            if p.is_file():
+                rel = p.relative_to(output_dir)
+                if rel not in expected_rel_paths:
+                    unexpected_files.append(str(rel))
+        if unexpected_files:
+            raise RuntimeError(
+                f"Refusing replacement: destination directory '{output_dir}' contains "
+                f"unexpected files: {', '.join(sorted(unexpected_files))}"
+            )
+
+    # Step 3: Create temporary staging and backup directories on same volume outside repo
+    staging_base = _get_temp_dir_on_same_volume(output_dir, prefix="astercite_pdf_staging_")
+    staging_dir = staging_base / "staged_corpus"
+    backup_base = _get_temp_dir_on_same_volume(output_dir, prefix="astercite_pdf_backup_")
+    backup_path = backup_base / "pdfs_backup"
+
+    output_dir_existed = output_dir.exists()
+    old_moved_to_backup = False
+    staging_moved_to_output = False
+
     try:
         # Step 4: Generate all 24 PDFs into staging directory
-        staged_paths: list[Path] = []
         for doc_id, meta in sorted(inventory.items()):
             dept = meta["owner_department"]
             src_filename = f"{doc_id.lower().replace('-', '_')}.md"
@@ -273,7 +321,6 @@ def generate_all_pdfs(
             metadata, doc_title, sections = load_source_document(src_path)
             staged_pdf = staging_dir / dept / f"{doc_id.lower().replace('-', '_')}_v1.pdf"
             build_pdf(staged_pdf, metadata, doc_title, sections)
-            staged_paths.append(staged_pdf)
 
         # Step 5: Validate staged PDFs before publication
         val_errors = validate_pdfs(
@@ -287,20 +334,73 @@ def generate_all_pdfs(
                 + "\n".join(f"  - {err}" for err in val_errors)
             )
 
-        # Step 6: Safe publication to output_dir
-        published_paths: list[Path] = []
-        for staged_file in staged_paths:
-            rel = staged_file.relative_to(staging_dir)
-            target_path = output_dir / rel
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(staged_file, target_path)
-            published_paths.append(target_path)
+        # Confirm staging contains exactly the approved PDF paths
+        staged_files = {p.relative_to(staging_dir) for p in staging_dir.rglob("*.pdf")}
+        if staged_files != expected_rel_paths:
+            missing = expected_rel_paths - staged_files
+            extra = staged_files - expected_rel_paths
+            raise RuntimeError(
+                f"Staged collection paths do not match expected inventory (missing: {missing}, extra: {extra})"
+            )
 
+        # Step 6: Safe directory swap
+        # If output_dir exists, move it to backup_path
+        if output_dir_existed:
+            os.replace(str(output_dir), str(backup_path))
+            old_moved_to_backup = True
+
+        # Move staged directory into output_dir
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(str(staging_dir), str(output_dir))
+        staging_moved_to_output = True
+
+        # Step 7: Validate the newly published collection
+        post_val_errors = validate_pdfs(
+            output_dir_path=output_dir,
+            source_dir_path=source_dir,
+            spec_dir_path=spec_dir,
+        )
+        if post_val_errors:
+            raise RuntimeError(
+                f"Published PDF collection failed validation with {len(post_val_errors)} error(s):\n"
+                + "\n".join(f"  - {err}" for err in post_val_errors)
+            )
+
+        # Step 8: Remove backup only after validation succeeds
+        if backup_base.exists():
+            shutil.rmtree(backup_base, ignore_errors=True)
+
+        published_paths = [output_dir / rel for rel in sorted(expected_rel_paths)]
         return published_paths
 
+    except Exception as exc:
+        rollback_failed = False
+        try:
+            if staging_moved_to_output:
+                shutil.rmtree(output_dir, ignore_errors=True)
+            if old_moved_to_backup:
+                os.replace(str(backup_path), str(output_dir))
+            elif not output_dir_existed and output_dir.exists():
+                shutil.rmtree(output_dir, ignore_errors=True)
+        except Exception as rb_exc:
+            rollback_failed = True
+            raise RuntimeError(
+                f"Publication failed: {exc}. CRITICAL: Rollback failed ({rb_exc}); "
+                f"previous collection preserved at '{backup_path}'"
+            ) from exc
+
+        if old_moved_to_backup and not rollback_failed:
+            shutil.rmtree(backup_base, ignore_errors=True)
+
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError(f"Publication failed: {exc}") from exc
+
     finally:
-        # Step 7: Always clean up temporary staging directory
-        shutil.rmtree(staging_dir, ignore_errors=True)
+        if staging_base.exists():
+            shutil.rmtree(staging_base, ignore_errors=True)
+        if not old_moved_to_backup and backup_base.exists():
+            shutil.rmtree(backup_base, ignore_errors=True)
 
 
 def main() -> int:

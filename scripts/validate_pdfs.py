@@ -114,40 +114,185 @@ def validate_pdfs(
             errors.append(f"Corrupted or invalid PDF {doc_id} ({pdf_path.name}): {exc}")
             continue
 
-        if reader.is_encrypted:
-            errors.append(f"PDF {doc_id} is encrypted")
+        try:
+            if reader.is_encrypted:
+                errors.append(f"PDF {doc_id} is encrypted")
+                continue
+        except Exception as exc:
+            errors.append(f"Failed to check encryption status for PDF {doc_id}: {exc}")
+            continue
 
-        num_pages = len(reader.pages)
+        try:
+            num_pages = len(reader.pages)
+        except Exception as exc:
+            errors.append(f"Failed to read pages from PDF {doc_id}: {exc}")
+            continue
+
         if num_pages < 1:
             errors.append(f"PDF {doc_id} has no pages")
             continue
 
         # Page dimension check (A4 portrait: 595.28 x 841.89 pt, tolerance +- 5 pt)
-        for page_idx, page in enumerate(reader.pages):
-            w = float(page.mediabox.width)
-            h = float(page.mediabox.height)
-            if not (590 <= w <= 600 and 835 <= h <= 850):
+        dim_error = False
+        for page_idx in range(num_pages):
+            try:
+                page = reader.pages[page_idx]
+                w = float(page.mediabox.width)
+                h = float(page.mediabox.height)
+                if not (590 <= w <= 600 and 835 <= h <= 850):
+                    errors.append(
+                        f"PDF {doc_id} page {page_idx + 1} dimensions not standard A4 portrait: {w:.1f}x{h:.1f} pt"
+                    )
+            except Exception as exc:
+                errors.append(f"Failed to inspect page dimensions for PDF {doc_id} page {page_idx + 1}: {exc}")
+                dim_error = True
+                break
+        if dim_error:
+            continue
+
+        # Reader metadata check
+        try:
+            pdf_meta = reader.metadata or {}
+            pdf_title = str(pdf_meta.get("/Title", "")).strip()
+            pdf_author = str(pdf_meta.get("/Author", "")).strip()
+            pdf_subject = str(pdf_meta.get("/Subject", "")).strip()
+
+            if pdf_title != expected_title:
+                errors.append(f"PDF {doc_id} metadata Title '{pdf_title}' != expected '{expected_title}'")
+
+            if pdf_author != "Aster Systems":
+                errors.append(f"PDF {doc_id} metadata Author '{pdf_author}' != 'Aster Systems'")
+
+            expected_subject = f"{doc_id} v1"
+            if pdf_subject != expected_subject:
+                errors.append(f"PDF {doc_id} metadata Subject '{pdf_subject}' != expected '{expected_subject}'")
+        except Exception as exc:
+            errors.append(f"Failed to read metadata from PDF {doc_id}: {exc}")
+            continue
+
+        # Extract text from all pages and strip headers/footers only from their expected locations
+        extract_failed = False
+        cleaned_page_texts: list[str] = []
+        raw_page_texts: list[str] = []
+        for page_idx in range(num_pages):
+            try:
+                page = reader.pages[page_idx]
+                ptxt = page.extract_text() or ""
+                if not ptxt.strip():
+                    errors.append(f"PDF {doc_id} page {page_idx + 1} has no extractable text")
+                raw_page_texts.append(ptxt)
+
+                # Running footer at the bottom of each page
+                footer_match = re.search(
+                    r"\n?Aster Systems Internal Documentation\s+Page \d+ of \d+\s*$",
+                    ptxt.rstrip(),
+                )
+                if not footer_match:
+                    errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running footer")
+                else:
+                    ptxt = ptxt.rstrip()[: footer_match.start()]
+
+                # Running header at the top of pages > 1
+                if page_idx > 0:
+                    header_match = re.match(
+                        r"^\s*Aster Systems( — [A-Z0-9-]+)?\s*\n?",
+                        ptxt.lstrip(),
+                    )
+                    if not header_match:
+                        errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running header")
+                    else:
+                        ptxt = ptxt.lstrip()[header_match.end() :]
+
+                cleaned_page_texts.append(ptxt)
+            except Exception as exc:
+                errors.append(f"Failed to extract text from PDF {doc_id} page {page_idx + 1}: {exc}")
+                extract_failed = True
+                break
+
+        if extract_failed:
+            continue
+
+        full_pdf_text = "\n".join(raw_page_texts)
+
+        # Presentation element removal on page 1
+        full_cleaned = "\n".join(cleaned_page_texts).strip()
+
+        # 1. Company heading at top of page 1
+        if full_cleaned.startswith("Aster Systems\n"):
+            full_cleaned = full_cleaned[len("Aster Systems\n") :].lstrip()
+        elif full_cleaned.startswith("Aster Systems"):
+            full_cleaned = full_cleaned[len("Aster Systems") :].lstrip()
+        else:
+            errors.append(f"PDF {doc_id} missing top company header 'Aster Systems'")
+
+        # 2. Document title
+        if not full_cleaned.startswith(src_title):
+            errors.append(f"PDF {doc_id} missing or mismatched document title '{src_title}'")
+            after_title = full_cleaned
+        else:
+            after_title = full_cleaned[len(src_title) :].lstrip()
+
+        # 3. Display metadata block
+        first_sec_heading = src_sections[0][0]
+        pos = after_title.find(first_sec_heading)
+        if pos == -1:
+            errors.append(f"PDF {doc_id} missing first section heading '{first_sec_heading}'")
+            body_text = after_title
+        else:
+            meta_banner = after_title[:pos].strip()
+            norm_meta = " ".join(meta_banner.split())
+            body_text = after_title[pos:].strip()
+
+            dept_disp = dept.replace("_", " ").title()
+            class_disp = str(src_metadata.get("classification", "")).strip().title()
+
+            expected_meta_parts = [
+                f"Document ID: {doc_id}",
+                "Version: v1",
+                f"Department: {dept_disp}",
+                f"Classification: {class_disp}",
+                "Effective Date: 2026-11-01",
+            ]
+            for part in expected_meta_parts:
+                if part.lower() not in norm_meta.lower():
+                    errors.append(f"PDF {doc_id} metadata banner missing '{part}'")
+
+            expected_meta_clean = "".join(
+                f"DocumentID:{doc_id}|Version:v1|Department:{dept_disp}|Classification:{class_disp}|EffectiveDate:2026-11-01".split()
+            )
+            norm_meta_clean = "".join(norm_meta.split())
+            if norm_meta_clean != expected_meta_clean:
                 errors.append(
-                    f"PDF {doc_id} page {page_idx + 1} dimensions not standard A4 portrait: {w:.1f}x{h:.1f} pt"
+                    f"PDF {doc_id} metadata banner contains unexpected text: '{norm_meta}'"
                 )
 
-        # Extract text from all pages
-        page_texts: list[str] = []
-        for page_idx, page in enumerate(reader.pages):
-            ptxt = page.extract_text() or ""
-            if not ptxt.strip():
-                errors.append(f"PDF {doc_id} page {page_idx + 1} has no extractable text")
-            page_texts.append(ptxt)
+        # 4. Exact source-text comparison
+        extracted_content = src_title + " " + body_text
+        norm_pdf = " ".join(extracted_content.split())
 
-        full_pdf_text = "\n".join(page_texts)
+        expected_units = [src_title]
+        for sec_title, paras in src_sections:
+            expected_units.append(sec_title)
+            for p in paras:
+                expected_units.append(p)
+        norm_expected = " ".join(" ".join(expected_units).split())
 
-        # Clean running headers and footers for paragraph analysis
-        cleaned_text = re.sub(r"Aster Systems — [A-Z0-9-]+", "", full_pdf_text)
-        cleaned_text = re.sub(r"Page \d+ of \d+", "", cleaned_text)
-        cleaned_text = re.sub(r"Aster Systems Internal Documentation", "", cleaned_text)
-        norm_pdf = " ".join(cleaned_text.split())
+        if norm_pdf != norm_expected:
+            min_len = min(len(norm_pdf), len(norm_expected))
+            diff_idx = min_len
+            for i in range(min_len):
+                if norm_pdf[i] != norm_expected[i]:
+                    diff_idx = i
+                    break
+            start = max(0, diff_idx - 30)
+            ext_snippet = norm_pdf[start : min(len(norm_pdf), diff_idx + 40)]
+            exp_snippet = norm_expected[start : min(len(norm_expected), diff_idx + 40)]
+            errors.append(
+                f"PDF {doc_id} content does not match source Markdown (first difference around char {diff_idx}): "
+                f"PDF has '{ext_snippet}' vs expected '{exp_snippet}'"
+            )
 
-        # Document identity checks
+        # Document identity checks in full raw text
         if expected_title.lower() not in full_pdf_text.lower():
             errors.append(f"PDF {doc_id} missing document title: '{expected_title}'")
 
@@ -166,22 +311,6 @@ def validate_pdfs(
 
         if "2026-11-01" not in full_pdf_text:
             errors.append(f"PDF {doc_id} missing effective date '2026-11-01'")
-
-        # Reader metadata check
-        pdf_meta = reader.metadata or {}
-        pdf_title = str(pdf_meta.get("/Title", "")).strip()
-        pdf_author = str(pdf_meta.get("/Author", "")).strip()
-        pdf_subject = str(pdf_meta.get("/Subject", "")).strip()
-
-        if pdf_title != expected_title:
-            errors.append(f"PDF {doc_id} metadata Title '{pdf_title}' != expected '{expected_title}'")
-
-        if pdf_author != "Aster Systems":
-            errors.append(f"PDF {doc_id} metadata Author '{pdf_author}' != 'Aster Systems'")
-
-        expected_subject = f"{doc_id} v1"
-        if pdf_subject != expected_subject:
-            errors.append(f"PDF {doc_id} metadata Subject '{pdf_subject}' != expected '{expected_subject}'")
 
         # Section structure checks: 6 approved headings in exact order
         doc_outline = outlines.get(doc_id, {})

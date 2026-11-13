@@ -14,12 +14,15 @@ Verifies:
 from __future__ import annotations
 
 import csv
+import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pypdf
 import yaml
@@ -29,7 +32,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.generate_pdfs import generate_all_pdfs, load_source_document
+from scripts.generate_pdfs import (
+    _get_temp_dir_on_same_volume,
+    build_pdf,
+    generate_all_pdfs,
+    load_source_document,
+)
 from scripts.validate_pdfs import validate_pdfs
 
 
@@ -384,6 +392,368 @@ class TestPDFs(unittest.TestCase):
             spec_dir_path=self.spec_dir,
         )
         self.assertEqual(errors, [])
+
+    # --- Publication Safety Regression Tests ---
+
+    def test_16_failed_publication_restores_all_24_previous_pdfs_with_identical_hashes(self):
+        """16. Verify failed publication restores all 24 previous PDFs with identical SHA-256 hashes."""
+        temp_pub = self._create_temp_pdf_copy()
+        # Record pre-publication SHA-256 hashes
+        pre_hashes: dict[str, str] = {}
+        for p in temp_pub.rglob("*_v1.pdf"):
+            pre_hashes[str(p.relative_to(temp_pub))] = hashlib.sha256(p.read_bytes()).hexdigest()
+        self.assertEqual(len(pre_hashes), 24)
+
+        orig_validate = validate_pdfs
+
+        def fail_on_target(*args, **kwargs):
+            out_p = Path(kwargs.get("output_dir_path", args[0] if args else ""))
+            if out_p.resolve() == temp_pub.resolve():
+                return ["Simulated post-publication validation failure"]
+            return orig_validate(*args, **kwargs)
+
+        with patch("scripts.validate_pdfs.validate_pdfs", side_effect=fail_on_target):
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=temp_pub,
+                    spec_dir_path=self.spec_dir,
+                )
+            self.assertIn("Published PDF collection failed validation", str(ctx.exception))
+
+        # Confirm all 24 files are restored with exact same hashes
+        post_hashes: dict[str, str] = {}
+        for p in temp_pub.rglob("*_v1.pdf"):
+            post_hashes[str(p.relative_to(temp_pub))] = hashlib.sha256(p.read_bytes()).hexdigest()
+
+        self.assertEqual(len(post_hashes), 24)
+        self.assertEqual(pre_hashes, post_hashes)
+
+    def test_17_failure_after_moving_old_collection_triggers_rollback(self):
+        """17. Verify failure during staging replacement triggers complete rollback to original files."""
+        temp_pub = self._create_temp_pdf_copy()
+        pre_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+
+        orig_replace = os.replace
+        replace_count = 0
+
+        def mock_replace(src, dst):
+            nonlocal replace_count
+            replace_count += 1
+            # Second call in generate_all_pdfs is os.replace(staging_dir, output_dir)
+            if replace_count == 2:
+                raise OSError("Simulated filesystem I/O error during staging swap")
+            return orig_replace(src, dst)
+
+        with patch("os.replace", side_effect=mock_replace):
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=temp_pub,
+                    spec_dir_path=self.spec_dir,
+                )
+            self.assertIn("Simulated filesystem I/O error", str(ctx.exception))
+
+        # Confirm rollback restored all 24 original files
+        post_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+        self.assertEqual(len(post_hashes), 24)
+        self.assertEqual(pre_hashes, post_hashes)
+
+    def test_18_failure_during_final_published_validation_triggers_rollback(self):
+        """18. Verify failure during final published validation triggers rollback to previous collection."""
+        temp_pub = self._create_temp_pdf_copy()
+        pre_files = sorted(str(p.relative_to(temp_pub)) for p in temp_pub.rglob("*_v1.pdf"))
+        self.assertEqual(len(pre_files), 24)
+
+        orig_validate = validate_pdfs
+
+        def fail_final(*args, **kwargs):
+            out_p = Path(kwargs.get("output_dir_path", args[0] if args else ""))
+            if out_p.resolve() == temp_pub.resolve():
+                return ["Simulated post-publication checksum discrepancy"]
+            return orig_validate(*args, **kwargs)
+
+        with patch("scripts.validate_pdfs.validate_pdfs", side_effect=fail_final):
+            with self.assertRaises(RuntimeError):
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=temp_pub,
+                    spec_dir_path=self.spec_dir,
+                )
+
+        post_files = sorted(str(p.relative_to(temp_pub)) for p in temp_pub.rglob("*_v1.pdf"))
+        self.assertEqual(pre_files, post_files)
+
+    def test_19_failure_with_no_previous_collection_leaves_no_partial_output(self):
+        """19. Verify failure with no previous published collection leaves no partial output."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_no_prev_")
+        target_dir = base_dir / "target_pdfs"
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        with patch("scripts.validate_pdfs.validate_pdfs", return_value=["Simulated staging validation failure"]):
+            with self.assertRaises(RuntimeError):
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=target_dir,
+                    spec_dir_path=self.spec_dir,
+                )
+
+        # Confirm target directory does not exist or has 0 PDFs
+        published_pdfs = list(target_dir.rglob("*.pdf")) if target_dir.exists() else []
+        self.assertEqual(published_pdfs, [])
+
+    def test_20_unexpected_user_files_are_preserved(self):
+        """20. Verify unexpected user files in destination block replacement and are preserved."""
+        temp_pub = self._create_temp_pdf_copy()
+        user_file = temp_pub / "user_notes.txt"
+        user_file.write_text("critical user notes that must never be deleted", encoding="utf-8")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            generate_all_pdfs(
+                source_dir_path=self.source_dir,
+                output_dir_path=temp_pub,
+                spec_dir_path=self.spec_dir,
+            )
+
+        self.assertIn("unexpected files", str(ctx.exception))
+        self.assertIn("user_notes.txt", str(ctx.exception))
+        self.assertTrue(user_file.exists())
+        self.assertEqual(user_file.read_text(encoding="utf-8"), "critical user notes that must never be deleted")
+
+    def test_21_normal_and_repeated_publication_succeed(self):
+        """21. Verify normal and repeated publication succeed cleanly using directory swap."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_norm_repeat_")
+        target_dir = base_dir / "published_pdfs"
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        # First publication
+        pub1 = generate_all_pdfs(
+            source_dir_path=self.source_dir,
+            output_dir_path=target_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(len(pub1), 24)
+        errs1 = validate_pdfs(
+            output_dir_path=target_dir,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(errs1, [])
+
+        # Repeated publication
+        pub2 = generate_all_pdfs(
+            source_dir_path=self.source_dir,
+            output_dir_path=target_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(len(pub2), 24)
+        errs2 = validate_pdfs(
+            output_dir_path=target_dir,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(errs2, [])
+
+    # --- Exact Content Validation Tests ---
+
+    def test_22_added_paragraph_between_approved_paragraphs_rejected(self):
+        """22. Verify an added paragraph between approved paragraphs is rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        mutated_secs[0][1].insert(1, "This is an unapproved additional paragraph between approved sections.")
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_23_extra_text_after_final_paragraph_rejected(self):
+        """23. Verify extra text after the final paragraph is rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        mutated_secs[-1][1].append("Unauthorized appendix paragraph after revision history.")
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_24_missing_paragraph_rejected(self):
+        """24. Verify a missing paragraph is rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        del mutated_secs[1][1][0]  # Omit first paragraph of P1 section
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_25_reordered_paragraphs_rejected(self):
+        """25. Verify reordered paragraphs are rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        mutated_secs[1][1].reverse()  # Reverse paragraphs in P1 section
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_26_changed_numerical_values_rejected(self):
+        """26. Verify changed numerical values are rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        mutated_secs[1][1][1] = mutated_secs[1][1][1].replace("10 minutes", "15 minutes")
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_27_changed_punctuation_rejected(self):
+        """27. Verify changed punctuation is rejected."""
+        temp_copy = self._create_temp_pdf_copy()
+        src_path = self.source_dir / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        mutated_secs[0][1][0] = mutated_secs[0][1][0].replace("availability.", "availability!")
+
+        build_pdf(temp_copy / "engineering" / "eng_001_v1.pdf", meta, title, mutated_secs)
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected content mismatch error, got: {errors}",
+        )
+
+    def test_28_valid_metadata_headers_and_footers_accepted(self):
+        """28. Verify standard metadata, headers, and footers remain fully accepted."""
+        errors = validate_pdfs(
+            output_dir_path=self.temp_dir,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(errors, [])
+
+    # --- Invalid PDF Handling Tests ---
+
+    def test_29_encrypted_pdf_rejected_without_crash(self):
+        """29. Verify an encrypted PDF is rejected cleanly without crashing."""
+        temp_copy = self._create_temp_pdf_copy()
+        target_pdf = temp_copy / "engineering" / "eng_001_v1.pdf"
+
+        # Encrypt the PDF
+        reader = pypdf.PdfReader(str(target_pdf))
+        writer = pypdf.PdfWriter()
+        for p in reader.pages:
+            writer.add_page(p)
+        writer.encrypt("secure_password")
+        with open(target_pdf, "wb") as f:
+            writer.write(f)
+
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("PDF ENG-001 is encrypted" in err for err in errors),
+            f"Expected encryption error, got: {errors}",
+        )
+
+    def test_30_corrupted_pdf_rejected_cleanly(self):
+        """30. Verify a corrupted or malformed PDF is rejected cleanly without crashing."""
+        temp_copy = self._create_temp_pdf_copy()
+        corrupted = temp_copy / "engineering" / "eng_001_v1.pdf"
+        corrupted.write_bytes(b"%PDF-1.4\xff\xfe\x00\x01MALFORMED_HEADER_DATA")
+
+        errors = validate_pdfs(
+            output_dir_path=temp_copy,
+            source_dir_path=self.source_dir,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("Corrupted or invalid PDF" in err and "ENG-001" in err for err in errors),
+            f"Expected corrupted PDF error, got: {errors}",
+        )
+
+    def test_31_page_extraction_or_metadata_reading_errors_produce_clear_validation_errors(self):
+        """31. Verify page extraction and metadata reading errors produce clear validation errors."""
+        temp_copy = self._create_temp_pdf_copy()
+
+        # 1. Page extraction failure
+        with patch.object(pypdf.PageObject, "extract_text", side_effect=pypdf.errors.PdfReadError("Simulated extraction error")):
+            errors = validate_pdfs(
+                output_dir_path=temp_copy,
+                source_dir_path=self.source_dir,
+                spec_dir_path=self.spec_dir,
+            )
+            self.assertTrue(
+                any("Failed to extract text from PDF" in err for err in errors),
+                f"Expected extraction failure error, got: {errors}",
+            )
+
+        # 2. Metadata reading failure
+        with patch.object(pypdf.PdfReader, "metadata", new_callable=PropertyMock, side_effect=pypdf.errors.PdfReadError("Simulated metadata error")):
+            errors = validate_pdfs(
+                output_dir_path=temp_copy,
+                source_dir_path=self.source_dir,
+                spec_dir_path=self.spec_dir,
+            )
+            self.assertTrue(
+                any("Failed to read metadata from PDF" in err for err in errors),
+                f"Expected metadata failure error, got: {errors}",
+            )
 
 
 if __name__ == "__main__":
