@@ -46,6 +46,8 @@ from scripts.ingest_pdfs import (
 )
 from scripts.validate_chunks import (
     REQUIRED_FIELDS,
+    REQUIRED_FRONTMATTER_FIELDS,
+    extract_pdf_page_texts,
     validate_chunks,
 )
 
@@ -757,6 +759,27 @@ class TestIngestion(unittest.TestCase):
         reader = pypdf.PdfReader(str(pdf_file))
         self.assertGreaterEqual(len(reader.pages), 2)
 
+        # Physically prove that a single individual paragraph crosses the PDF page boundary
+        page_texts, num_pages = extract_pdf_page_texts(pdf_file, "ENG-001", title, "Purpose and Scope")
+        self.assertGreaterEqual(num_pages, 2)
+        p1_text = " ".join(page_texts[0].split())
+        p2_text = " ".join(page_texts[1].split())
+        combined_text = p1_text + " " + p2_text
+
+        split_paras = []
+        for sec_name, p_list in secs:
+            for p in p_list:
+                norm_p = " ".join(p.split())
+                if norm_p not in p1_text and norm_p not in p2_text and norm_p in combined_text:
+                    split_paras.append(norm_p)
+
+        self.assertTrue(len(split_paras) >= 1, "Must find at least one individual paragraph split across page 1 and page 2")
+        split_p = split_paras[0]
+        self.assertIn(split_p[:40], p1_text, "Opening of split paragraph must physically appear on page 1")
+        self.assertIn(split_p[-12:], p2_text, "Closing of split paragraph must physically appear on page 2")
+        self.assertNotIn(split_p, p1_text, "Full split paragraph must not be present on page 1 alone")
+        self.assertNotIn(split_p, p2_text, "Full split paragraph must not be present on page 2 alone")
+
         out_jsonl = base_dir / "cross_chunks.jsonl"
         chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
 
@@ -1056,6 +1079,403 @@ class TestIngestion(unittest.TestCase):
         self.assertEqual(h1, baseline_sha)
         self.assertEqual(h2, baseline_sha)
         self.assertEqual(h1, h2)
+
+    # --- Positional Paragraph Page Mapping Regression Test (55) ---
+
+    def test_55_repeated_paragraph_positional_page_mapping(self):
+        """55. Verify identical paragraphs at different positions map to distinct page numbers positionally."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_rep_para_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+
+        repeated_text = (
+            "This standardized operational procedure ensures continuous incident "
+            "management consistency across engineering teams."
+        )
+        filler = "\n\n".join(
+            f"Operational filler paragraph {i} providing extended guidance on system monitoring, "
+            f"alert triage, escalation protocols, and documentation for platform resilience."
+            for i in range(22)
+        )
+        # Place repeated_text at start of S01, followed by filler paragraphs, then repeated_text again at end of S01
+        s01_marker = "## Purpose and Scope\n"
+        replacement = f"{s01_marker}{repeated_text}\n\n{filler}\n\n{repeated_text}\n\n"
+        eng_file.write_text(content.replace(s01_marker, replacement), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        pdf_file = temp_pdf / "engineering" / "eng_001_v1.pdf"
+        build_pdf(pdf_file, meta, title, secs)
+
+        reader = pypdf.PdfReader(str(pdf_file))
+        self.assertGreaterEqual(len(reader.pages), 2)
+
+        out_jsonl = base_dir / "rep_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        # Validate that positional mapping accepts both identical paragraphs without collision
+        errors = validate_chunks(out_jsonl, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertEqual(errors, [])
+
+        s01_chunks = [c for c in chunks if c["document_id"] == "ENG-001" and c["section_id"] == "S01"]
+        self.assertGreaterEqual(len(s01_chunks), 2)
+        # First chunk contains the first occurrence on page 1
+        first_rep_chunk = s01_chunks[0]
+        self.assertIn(repeated_text, first_rep_chunk["text"])
+        self.assertEqual(first_rep_chunk["page_start"], 1)
+        self.assertEqual(first_rep_chunk["page_end"], 1)
+
+        # Last chunk contains the second occurrence on page 2
+        last_rep_chunk = s01_chunks[-1]
+        self.assertIn(repeated_text, last_rep_chunk["text"])
+        self.assertEqual(last_rep_chunk["page_start"], 2)
+        self.assertEqual(last_rep_chunk["page_end"], 2)
+
+        # Negative mutation: mutate last_rep_chunk's page reference to page 1
+        mutated = [dict(c) for c in chunks]
+        for c in mutated:
+            if c["chunk_id"] == last_rep_chunk["chunk_id"]:
+                c["page_start"] = 1
+                c["page_end"] = 1
+                break
+
+        mutated_file = base_dir / "mutated_rep.jsonl"
+        with open(mutated_file, "w", encoding="utf-8", newline="\n") as f:
+            for rec in mutated:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        mut_errors = validate_chunks(mutated_file, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertTrue(
+            any(f"Chunk {last_rep_chunk['chunk_id']} page range 1-1 != expected 2-2" in e for e in mut_errors),
+            f"Expected positional page range mismatch error, got: {mut_errors}",
+        )
+
+    # --- Markdown Heading Regression Tests (56 to 60) ---
+
+    def test_56_heading_first_changed_rejected(self):
+        """56. Verify first H2 section heading (S01) changed in Markdown source is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_h1_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(text.replace("## Purpose and Scope", "## Altered Purpose and Scope"), encoding="utf-8")
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any(
+                "Document ENG-001 section S01 heading mismatch in eng_001.md: expected 'Purpose and Scope', got 'Altered Purpose and Scope'"
+                in e
+                for e in errors
+            ),
+            f"Expected first heading mismatch error, got: {errors}",
+        )
+
+    def test_57_heading_middle_changed_rejected(self):
+        """57. Verify middle H2 section heading (S03) changed in Markdown source is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_h2_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("## P2 Incident Acknowledgment", "## P2 Incident Response Times"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any(
+                "Document ENG-001 section S03 heading mismatch in eng_001.md: expected 'P2 Incident Acknowledgment', got 'P2 Incident Response Times'"
+                in e
+                for e in errors
+            ),
+            f"Expected middle heading mismatch error, got: {errors}",
+        )
+
+    def test_58_heading_final_changed_rejected(self):
+        """58. Verify final H2 section heading (S06) changed in Markdown source is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_h3_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("## Revision History", "## Document Change Log"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any(
+                "Document ENG-001 section S06 heading mismatch in eng_001.md: expected 'Revision History', got 'Document Change Log'"
+                in e
+                for e in errors
+            ),
+            f"Expected final heading mismatch error, got: {errors}",
+        )
+
+    def test_59_heading_swapped_rejected(self):
+        """59. Verify swapped H2 section headings in Markdown source are rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_h4_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        t = text.replace("## Purpose and Scope", "## TEMP_PLACEHOLDER")
+        t = t.replace("## P1 Incident Acknowledgment", "## Purpose and Scope")
+        t = t.replace("## TEMP_PLACEHOLDER", "## P1 Incident Acknowledgment")
+        doc_path.write_text(t, encoding="utf-8")
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("section S01 heading mismatch" in e for e in errors),
+            f"Expected S01 heading mismatch error, got: {errors}",
+        )
+        self.assertTrue(
+            any("section S02 heading mismatch" in e for e in errors),
+            f"Expected S02 heading mismatch error, got: {errors}",
+        )
+
+    def test_60_heading_original_approved_pass(self):
+        """60. Verify all 24 original approved documents have exactly matching H2 section headings."""
+        errors = validate_chunks()
+        heading_errors = [e for e in errors if "heading mismatch" in e or "section count mismatch" in e]
+        self.assertEqual(heading_errors, [])
+
+    # --- Markdown Front Matter Regression Tests (61 to 71) ---
+
+    def test_61_frontmatter_wrong_document_id_rejected(self):
+        """61. Verify document_id mismatch in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m1_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(text.replace("document_id: ENG-001", "document_id: ENG-999"), encoding="utf-8")
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter document_id 'ENG-999' != 'ENG-001'" in e for e in errors),
+            f"Expected document_id mismatch error, got: {errors}",
+        )
+
+    def test_62_frontmatter_wrong_version_v2_rejected(self):
+        """62. Verify document_version: v2 in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m2_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(text.replace("document_version: v1", "document_version: v2"), encoding="utf-8")
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter document_version 'v2' != 'v1'" in e for e in errors),
+            f"Expected document_version mismatch error, got: {errors}",
+        )
+
+    def test_63_frontmatter_wrong_yaml_title_rejected(self):
+        """63. Verify YAML front matter title mismatch against inventory and H1 is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m3_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace(
+                "title: Production Incident Severity & Escalation Policy",
+                "title: Altered Title in Front Matter",
+            ),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("YAML front matter title 'Altered Title in Front Matter' != inventory title" in e for e in errors),
+            f"Expected YAML title mismatch error, got: {errors}",
+        )
+
+    def test_64_frontmatter_wrong_h1_title_rejected(self):
+        """64. Verify H1 title mismatch against inventory and front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m4_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace(
+                "# Production Incident Severity & Escalation Policy",
+                "# Altered H1 Document Heading",
+            ),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("H1 title 'Altered H1 Document Heading' != inventory title" in e for e in errors),
+            f"Expected H1 title mismatch error, got: {errors}",
+        )
+
+    def test_65_frontmatter_wrong_department_rejected(self):
+        """65. Verify owner_department mismatch in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m5_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("owner_department: engineering", "owner_department: it_support"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter owner_department 'it_support' != 'engineering'" in e for e in errors),
+            f"Expected owner_department mismatch error, got: {errors}",
+        )
+
+    def test_66_frontmatter_wrong_classification_rejected(self):
+        """66. Verify classification mismatch in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m6_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("classification: department", "classification: restricted"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter classification 'restricted' != 'department'" in e for e in errors),
+            f"Expected classification mismatch error, got: {errors}",
+        )
+
+    def test_67_frontmatter_wrong_effective_date_rejected(self):
+        """67. Verify non-2026-11-01 effective_from date in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m7_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("effective_from: 2026-11-01", "effective_from: 2027-01-01"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter effective_from '2027-01-01' != '2026-11-01'" in e for e in errors),
+            f"Expected effective_from mismatch error, got: {errors}",
+        )
+
+    def test_68_frontmatter_wrong_source_type_rejected(self):
+        """68. Verify non-synthetic source_type in Markdown front matter is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m8_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("source_type: synthetic", "source_type: external"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("Source ENG-001 front matter source_type 'external' != 'synthetic'" in e for e in errors),
+            f"Expected source_type mismatch error, got: {errors}",
+        )
+
+    def test_69_frontmatter_missing_required_fields_rejected(self):
+        """69. Verify missing required front matter field in Markdown source is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m9_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("source_type: synthetic\n", ""),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("missing required field(s): ['source_type']" in e for e in errors),
+            f"Expected missing required field error, got: {errors}",
+        )
+
+    def test_70_frontmatter_null_and_malformed_fields_rejected(self):
+        """70. Verify null or empty front matter fields in Markdown source are rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m10_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        doc_path.write_text(
+            text.replace("classification: department", "classification: null"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        self.assertTrue(
+            any("field 'classification' is null or empty" in e for e in errors),
+            f"Expected null field error, got: {errors}",
+        )
+
+    def test_71_frontmatter_pyyaml_date_object_and_iso_string_accepted(self):
+        """71. Verify both unquoted YAML date object and quoted ISO date string are accepted."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_m11_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        doc_path = temp_src / "engineering" / "eng_001.md"
+        text = doc_path.read_text(encoding="utf-8")
+        # Test quoted date string
+        doc_path.write_text(
+            text.replace("effective_from: 2026-11-01", "effective_from: '2026-11-01'"),
+            encoding="utf-8",
+        )
+
+        errors = validate_chunks(source_dir_path=temp_src)
+        date_errors = [e for e in errors if "effective_from" in e]
+        self.assertEqual(date_errors, [], f"Quoted ISO date string should produce no errors, got: {date_errors}")
 
 
 if __name__ == "__main__":

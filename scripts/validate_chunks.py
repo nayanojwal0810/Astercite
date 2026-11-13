@@ -7,6 +7,7 @@ authoritative input PDFs, Markdown sources, and frozen specifications.
 from __future__ import annotations
 
 import csv
+import datetime
 import hashlib
 import json
 import os
@@ -60,6 +61,16 @@ REQUIRED_FIELDS = [
     "fact_ids",
     "allowed_roles",
     "team_lead_departments",
+]
+
+REQUIRED_FRONTMATTER_FIELDS = [
+    "document_id",
+    "document_version",
+    "title",
+    "owner_department",
+    "classification",
+    "effective_from",
+    "source_type",
 ]
 
 MAX_CHUNK_WORDS = 220
@@ -221,13 +232,16 @@ def parse_source_markdown_document(
     if not fm_match:
         raise ValueError(f"Missing YAML front matter in {src_path.name}")
 
-    metadata = yaml.safe_load(fm_match.group(1))
+    try:
+        metadata = yaml.safe_load(fm_match.group(1))
+    except Exception as exc:
+        raise ValueError(f"Malformed YAML front matter in {src_path.name}: {exc}")
+    if not isinstance(metadata, dict):
+        metadata = {}
     body = fm_match.group(2) or ""
 
     h1_match = re.search(r"^#\s+(.+)$", body, flags=re.MULTILINE)
-    if not h1_match:
-        raise ValueError(f"Missing H1 title in {src_path.name}")
-    doc_title = h1_match.group(1).strip()
+    doc_title = h1_match.group(1).strip() if h1_match else ""
 
     raw_sections = re.split(r"^##\s+(.+)$", body, flags=re.MULTILINE)
     if len(raw_sections) != 13:
@@ -552,11 +566,104 @@ def validate_chunks(
             errors.append(f"Failed to parse source document {actual_src_file}: {exc}")
             continue
 
-        # Check Markdown front matter
-        if src_title != inv_entry["title"].strip():
-            errors.append(f"Source {doc_id} title '{src_title}' != inventory title '{inv_entry['title']}'")
+        # Check source Markdown front matter fields and values
+        if not isinstance(src_meta, dict):
+            errors.append(f"Source {doc_id} front matter is not a valid mapping in {actual_src_file.name}")
+            src_meta = {}
+
+        missing_fm = [f for f in REQUIRED_FRONTMATTER_FIELDS if f not in src_meta]
+        if missing_fm:
+            errors.append(
+                f"Source {doc_id} front matter missing required field(s): {missing_fm} in {actual_src_file.name}"
+            )
+
+        for fld in REQUIRED_FRONTMATTER_FIELDS:
+            if fld in src_meta:
+                val = src_meta[fld]
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    errors.append(
+                        f"Source {doc_id} front matter field '{fld}' is null or empty in {actual_src_file.name}"
+                    )
+
+        # Document ID check
+        if src_meta.get("document_id") != doc_id:
+            errors.append(
+                f"Source {doc_id} front matter document_id '{src_meta.get('document_id')}' != '{doc_id}' in {actual_src_file.name}"
+            )
+
+        # Document version check
+        if src_meta.get("document_version") != "v1":
+            errors.append(
+                f"Source {doc_id} front matter document_version '{src_meta.get('document_version')}' != 'v1' in {actual_src_file.name}"
+            )
+
+        # Independent three-way title matching
+        inv_title = inv_entry["title"].strip()
+        yaml_title = str(src_meta.get("title", "")).strip() if src_meta.get("title") is not None else ""
+        h1_title = src_title.strip()
+
+        if not h1_title:
+            errors.append(f"Source {doc_id} missing H1 title in {actual_src_file.name}")
+        if yaml_title != inv_title:
+            errors.append(
+                f"Source {doc_id} YAML front matter title '{yaml_title}' != inventory title '{inv_title}' in {actual_src_file.name}"
+            )
+        if h1_title != inv_title:
+            errors.append(
+                f"Source {doc_id} H1 title '{h1_title}' != inventory title '{inv_title}' in {actual_src_file.name}"
+            )
+        if yaml_title != h1_title:
+            errors.append(
+                f"Source {doc_id} YAML front matter title '{yaml_title}' != H1 title '{h1_title}' in {actual_src_file.name}"
+            )
+
+        # Owner department check
+        if src_meta.get("owner_department") != dept:
+            errors.append(
+                f"Source {doc_id} front matter owner_department '{src_meta.get('owner_department')}' != '{dept}' in {actual_src_file.name}"
+            )
+
+        # Classification check
         if src_meta.get("classification") != inv_entry["classification"].strip().lower():
-            errors.append(f"Source {doc_id} classification '{src_meta.get('classification')}' != '{inv_entry['classification']}'")
+            errors.append(
+                f"Source {doc_id} front matter classification '{src_meta.get('classification')}' != '{inv_entry['classification'].strip().lower()}' in {actual_src_file.name}"
+            )
+
+        # Effective date normalization and check
+        raw_eff = src_meta.get("effective_from")
+        eff_str = None
+        if isinstance(raw_eff, datetime.date) and not isinstance(raw_eff, bool):
+            eff_str = raw_eff.strftime("%Y-%m-%d")
+        elif isinstance(raw_eff, str):
+            eff_str = raw_eff.strip()
+
+        if eff_str != "2026-11-01":
+            errors.append(
+                f"Source {doc_id} front matter effective_from '{raw_eff}' != '2026-11-01' in {actual_src_file.name}"
+            )
+
+        # Source type check
+        expected_src_type = inv_entry.get("source_type", "synthetic").strip()
+        if src_meta.get("source_type") != expected_src_type:
+            errors.append(
+                f"Source {doc_id} front matter source_type '{src_meta.get('source_type')}' != '{expected_src_type}' in {actual_src_file.name}"
+            )
+
+        # Check source Markdown H2 section headings against approved document_outlines.yaml
+        outline_secs = outline.get("sections", [])
+        if len(src_sections) != len(outline_secs):
+            errors.append(
+                f"Document {doc_id} section count mismatch in {actual_src_file.name}: expected {len(outline_secs)}, got {len(src_sections)}"
+            )
+        else:
+            for s_idx, s_info in enumerate(outline_secs):
+                exp_sid = s_info["section_id"]
+                exp_stitle = s_info["title"].strip()
+                act_stitle = src_sections[s_idx][0].strip()
+                if act_stitle != exp_stitle:
+                    errors.append(
+                        f"Document {doc_id} section {exp_sid} heading mismatch in {actual_src_file.name}: expected '{exp_stitle}', got '{act_stitle}'"
+                    )
 
         # Check PDF existence and extract body text per page
         if not actual_pdf_file.exists():
@@ -594,7 +701,7 @@ def validate_chunks(
                     return p_idx
             return len(page_ranges)
 
-        expected_para_pages: dict[str, tuple[int, int]] = {}
+        expected_pos_pages: dict[tuple[str, int], tuple[int, int]] = {}
         cursor = 0
         pdf_align_error = False
 
@@ -609,7 +716,7 @@ def validate_chunks(
 
             if sec_idx < len(src_sections):
                 src_sec_title, src_paras = src_sections[sec_idx]
-                for para in src_paras:
+                for p_idx, para in enumerate(src_paras):
                     pos_p = combined_pdf_text.find(para, cursor)
                     if pos_p == -1:
                         errors.append(f"Document {doc_id}: paragraph '{para[:40]}...' missing or altered in PDF text at offset {cursor}")
@@ -618,7 +725,7 @@ def validate_chunks(
                     p_s = _get_page(pos_p)
                     p_e = _get_page(pos_p + len(para) - 1)
                     cursor = pos_p + len(para)
-                    expected_para_pages[para] = (p_s, p_e)
+                    expected_pos_pages[(sec_id, p_idx)] = (p_s, p_e)
                 if pdf_align_error:
                     break
 
@@ -668,6 +775,7 @@ def validate_chunks(
                             )
 
             # Validate each chunk in this section
+            curr_sec_para_idx = 0
             for idx, c in enumerate(sec_chunks, start=1):
                 chunk_id = c["chunk_id"]
 
@@ -725,17 +833,21 @@ def validate_chunks(
                 # Page reference validation
                 p_start = c["page_start"]
                 p_end = c["page_end"]
+                chunk_individual_paras = [" ".join(p.split()) for p in text_val.split("\n\n") if p.strip()]
+                num_c_paras = len(chunk_individual_paras)
                 if p_start < 1 or p_end < p_start or p_end > num_pages:
                     errors.append(f"Chunk {chunk_id} invalid page range {p_start}-{p_end} (PDF has {num_pages} pages)")
                 else:
-                    chunk_individual_paras = [" ".join(p.split()) for p in text_val.split("\n\n") if p.strip()]
-                    if chunk_individual_paras and chunk_individual_paras[0] in expected_para_pages and chunk_individual_paras[-1] in expected_para_pages:
-                        exp_p_s = expected_para_pages[chunk_individual_paras[0]][0]
-                        exp_p_e = expected_para_pages[chunk_individual_paras[-1]][1]
+                    first_pos = (sec_id, curr_sec_para_idx)
+                    last_pos = (sec_id, curr_sec_para_idx + num_c_paras - 1)
+                    if first_pos in expected_pos_pages and last_pos in expected_pos_pages:
+                        exp_p_s = expected_pos_pages[first_pos][0]
+                        exp_p_e = expected_pos_pages[last_pos][1]
                         if p_start != exp_p_s or p_end != exp_p_e:
                             errors.append(
                                 f"Chunk {chunk_id} page range {p_start}-{p_end} != expected {exp_p_s}-{exp_p_e}"
                             )
+                curr_sec_para_idx += num_c_paras
 
                 # Access permissions check against access_policy.yaml
                 expected_roles = sorted(policy_entry.get("allowed_roles", []))
