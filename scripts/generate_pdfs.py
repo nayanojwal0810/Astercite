@@ -245,6 +245,70 @@ def _get_temp_dir_on_same_volume(target_dir: Path, prefix: str) -> Path:
     return Path(tempfile.mkdtemp(prefix=prefix, dir=base_temp))
 
 
+APPROVED_DEPARTMENTS = {
+    "engineering",
+    "it_support",
+    "people_operations",
+    "finance_operations",
+}
+
+
+def inspect_destination_for_unexpected_entries(
+    output_dir: Path, expected_rel_paths: set[Path]
+) -> list[str]:
+    """Inspect output_dir and return a list of unexpected relative paths (files, dirs, symlinks).
+    Does not follow symlinks or junctions.
+    """
+    if not output_dir.exists():
+        return []
+
+    unexpected: list[str] = []
+
+    if output_dir.is_symlink():
+        return [output_dir.name]
+
+    for root, dirs, files in os.walk(str(output_dir), followlinks=False):
+        root_path = Path(root)
+        try:
+            rel_root = root_path.relative_to(output_dir)
+        except ValueError:
+            continue
+
+        if rel_root != Path(".") and root_path.is_symlink():
+            unexpected.append(rel_root.as_posix())
+            dirs.clear()
+            continue
+
+        if rel_root == Path("."):
+            for d in dirs:
+                dir_path = root_path / d
+                if dir_path.is_symlink() or d not in APPROVED_DEPARTMENTS:
+                    unexpected.append(Path(d).as_posix())
+            for f in files:
+                unexpected.append(Path(f).as_posix())
+        elif len(rel_root.parts) == 1:
+            dept = rel_root.parts[0]
+            if dept in APPROVED_DEPARTMENTS:
+                for d in dirs:
+                    unexpected.append((rel_root / d).as_posix())
+                for f in files:
+                    rel_f = rel_root / f
+                    if (root_path / f).is_symlink() or rel_f not in expected_rel_paths:
+                        unexpected.append(rel_f.as_posix())
+            else:
+                for d in dirs:
+                    unexpected.append((rel_root / d).as_posix())
+                for f in files:
+                    unexpected.append((rel_root / f).as_posix())
+        else:
+            for d in dirs:
+                unexpected.append((rel_root / d).as_posix())
+            for f in files:
+                unexpected.append((rel_root / f).as_posix())
+
+    return sorted(set(unexpected))
+
+
 def generate_all_pdfs(
     source_dir_path: Path | str | None = None,
     output_dir_path: Path | str | None = None,
@@ -285,18 +349,15 @@ def generate_all_pdfs(
         expected_rel_paths.add(Path(dept) / pdf_name)
 
     # Safety check on destination before touching anything:
-    # Refuse unsafe replacement if unexpected files exist in destination
+    # Refuse unsafe replacement if unexpected files or directories exist in destination
     if output_dir.exists():
-        unexpected_files: list[str] = []
-        for p in output_dir.rglob("*"):
-            if p.is_file():
-                rel = p.relative_to(output_dir)
-                if rel not in expected_rel_paths:
-                    unexpected_files.append(str(rel))
-        if unexpected_files:
+        unexpected_entries = inspect_destination_for_unexpected_entries(
+            output_dir, expected_rel_paths
+        )
+        if unexpected_entries:
             raise RuntimeError(
                 f"Refusing replacement: destination directory '{output_dir}' contains "
-                f"unexpected files: {', '.join(sorted(unexpected_files))}"
+                f"unexpected filesystem entries: {', '.join(unexpected_entries)}"
             )
 
     # Step 3: Create temporary staging and backup directories on same volume outside repo
@@ -366,41 +427,66 @@ def generate_all_pdfs(
                 + "\n".join(f"  - {err}" for err in post_val_errors)
             )
 
-        # Step 8: Remove backup only after validation succeeds
+        # Step 8: Clean up backup directory after successful publication
         if backup_base.exists():
-            shutil.rmtree(backup_base, ignore_errors=True)
+            try:
+                shutil.rmtree(backup_base)
+            except Exception as cleanup_exc:
+                print(
+                    f"Warning: Failed to clean up backup directory at '{backup_base}': {cleanup_exc}",
+                    file=sys.stderr,
+                )
 
         published_paths = [output_dir / rel for rel in sorted(expected_rel_paths)]
         return published_paths
 
     except Exception as exc:
         rollback_failed = False
+        rb_exc_saved = None
         try:
             if staging_moved_to_output:
-                shutil.rmtree(output_dir, ignore_errors=True)
+                if output_dir.exists():
+                    shutil.rmtree(output_dir)
             if old_moved_to_backup:
+                if output_dir.exists():
+                    shutil.rmtree(output_dir)
                 os.replace(str(backup_path), str(output_dir))
             elif not output_dir_existed and output_dir.exists():
-                shutil.rmtree(output_dir, ignore_errors=True)
+                shutil.rmtree(output_dir)
         except Exception as rb_exc:
             rollback_failed = True
+            rb_exc_saved = rb_exc
+
+        if rollback_failed:
             raise RuntimeError(
-                f"Publication failed: {exc}. CRITICAL: Rollback failed ({rb_exc}); "
+                f"Publication failed: {exc}. CRITICAL: Rollback failed ({rb_exc_saved}); "
                 f"previous collection preserved at '{backup_path}'"
             ) from exc
 
-        if old_moved_to_backup and not rollback_failed:
-            shutil.rmtree(backup_base, ignore_errors=True)
+        if old_moved_to_backup:
+            try:
+                if backup_base.exists():
+                    shutil.rmtree(backup_base)
+            except Exception as b_rem_exc:
+                print(
+                    f"Warning: Failed to clean up backup base '{backup_base}' after rollback: {b_rem_exc}",
+                    file=sys.stderr,
+                )
 
         if isinstance(exc, RuntimeError):
             raise
         raise RuntimeError(f"Publication failed: {exc}") from exc
 
     finally:
+        # Clean up temporary staging base directory only; never delete backup_base here
         if staging_base.exists():
-            shutil.rmtree(staging_base, ignore_errors=True)
-        if not old_moved_to_backup and backup_base.exists():
-            shutil.rmtree(backup_base, ignore_errors=True)
+            try:
+                shutil.rmtree(staging_base)
+            except Exception as stage_clean_exc:
+                print(
+                    f"Warning: Failed to clean up staging directory '{staging_base}': {stage_clean_exc}",
+                    file=sys.stderr,
+                )
 
 
 def main() -> int:

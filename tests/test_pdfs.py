@@ -521,7 +521,7 @@ class TestPDFs(unittest.TestCase):
                 spec_dir_path=self.spec_dir,
             )
 
-        self.assertIn("unexpected files", str(ctx.exception))
+        self.assertIn("unexpected", str(ctx.exception).lower())
         self.assertIn("user_notes.txt", str(ctx.exception))
         self.assertTrue(user_file.exists())
         self.assertEqual(user_file.read_text(encoding="utf-8"), "critical user notes that must never be deleted")
@@ -754,6 +754,234 @@ class TestPDFs(unittest.TestCase):
                 any("Failed to read metadata from PDF" in err for err in errors),
                 f"Expected metadata failure error, got: {errors}",
             )
+
+    # --- Multi-Page, Directory-Safety & Advanced Cleanup Tests ---
+
+    def test_32_multipage_pdf_passes_exact_validation(self):
+        """32. Verify genuine multi-page A4 PDF validates exact full text and layout across page breaks."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        # Expand ENG-001 in temp_src with extra paragraphs to force a page break
+        eng_src_path = temp_src / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(eng_src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        for i in range(12):
+            mutated_secs[0][1].append(
+                f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
+            )
+
+        # Write mutated Markdown back
+        md_lines = ["---", "document_id: ENG-001", "document_version: v1", "owner_department: engineering", "classification: department", "---", "", f"# {title}", ""]
+        for s_title, paras in mutated_secs:
+            md_lines.append(f"## {s_title}")
+            for p in paras:
+                md_lines.append(p)
+                md_lines.append("")
+        eng_src_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+        # Build multi-page PDF into temp_out
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        build_pdf(eng_pdf_path, meta, title, mutated_secs)
+
+        # 1. Assert PDF has at least two pages
+        reader = pypdf.PdfReader(str(eng_pdf_path))
+        self.assertGreaterEqual(len(reader.pages), 2, "Test multi-page PDF must have at least 2 pages")
+
+        # 2. Every page has correct footer; pages after page 1 have expected running header
+        for page_idx, page in enumerate(reader.pages):
+            p_text = page.extract_text() or ""
+            self.assertIn("Aster Systems Internal Documentation", p_text)
+            self.assertIn(f"Page {page_idx + 1} of {len(reader.pages)}", p_text)
+            if page_idx > 0:
+                self.assertIn("Aster Systems — ENG-001", p_text)
+
+        # 3. Exact full-text validation passes
+        errors = validate_pdfs(
+            output_dir_path=temp_out,
+            source_dir_path=temp_src,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertEqual(errors, [], f"Multi-page PDF failed validation: {errors}")
+
+    def test_33_multipage_pdf_rejects_unrelated_content(self):
+        """33. Verify multi-page PDF validator rejects unauthorized extra text across pages."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        eng_src_path = temp_src / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(eng_src_path)
+        mutated_secs = [(s[0], list(s[1])) for s in secs]
+        for i in range(12):
+            mutated_secs[0][1].append(
+                f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
+            )
+
+        md_lines = ["---", "document_id: ENG-001", "document_version: v1", "owner_department: engineering", "classification: department", "---", "", f"# {title}", ""]
+        for s_title, paras in mutated_secs:
+            md_lines.append(f"## {s_title}")
+            for p in paras:
+                md_lines.append(p)
+                md_lines.append("")
+        eng_src_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+        # In PDF only, insert an extra unapproved paragraph on page 2
+        mutated_pdf_secs = [(s[0], list(s[1])) for s in mutated_secs]
+        mutated_pdf_secs[3][1].append("Unauthorized injected clause on page two.")
+
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        build_pdf(eng_pdf_path, meta, title, mutated_pdf_secs)
+
+        errors = validate_pdfs(
+            output_dir_path=temp_out,
+            source_dir_path=temp_src,
+            spec_dir_path=self.spec_dir,
+        )
+        self.assertTrue(
+            any("content does not match source Markdown" in err and "ENG-001" in err for err in errors),
+            f"Expected multi-page content mismatch error, got: {errors}",
+        )
+
+    def test_34_no_previous_collection_post_publication_failure_cleans_up(self):
+        """34. Verify failure during post-publication validation with no previous collection cleans up installed files."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_noprev_pub_")
+        target_dir = base_dir / "target_published_pdfs"
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        orig_validate = validate_pdfs
+        staged_validated = False
+
+        def fail_post_pub(*args, **kwargs):
+            nonlocal staged_validated
+            out_p = Path(kwargs.get("output_dir_path", args[0] if args else ""))
+            if out_p.resolve() == target_dir.resolve():
+                return ["Simulated post-publication checksum discrepancy on installed collection"]
+            staged_validated = True
+            return orig_validate(*args, **kwargs)
+
+        with patch("scripts.validate_pdfs.validate_pdfs", side_effect=fail_post_pub):
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=target_dir,
+                    spec_dir_path=self.spec_dir,
+                )
+            self.assertIn("Published PDF collection failed validation", str(ctx.exception))
+
+        # Confirm staged validation was reached and passed
+        self.assertTrue(staged_validated, "Staged collection validation should have passed before publication")
+        # Confirm no incomplete published files remain in target_dir
+        remaining_pdfs = list(target_dir.rglob("*.pdf")) if target_dir.exists() else []
+        self.assertEqual(remaining_pdfs, [], "Failed installation without previous collection must leave 0 PDFs")
+
+    def test_35_unexpected_empty_root_directory_rejected_and_preserved(self):
+        """35. Verify unexpected empty root-level directory is rejected before swap and preserved."""
+        temp_pub = self._create_temp_pdf_copy()
+        pre_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+
+        extra_dir = temp_pub / "private_notes"
+        extra_dir.mkdir()
+
+        with self.assertRaises(RuntimeError) as ctx:
+            generate_all_pdfs(
+                source_dir_path=self.source_dir,
+                output_dir_path=temp_pub,
+                spec_dir_path=self.spec_dir,
+            )
+
+        self.assertIn("unexpected filesystem entries", str(ctx.exception))
+        self.assertIn("private_notes", str(ctx.exception))
+        self.assertTrue(extra_dir.exists(), "Unexpected directory must be preserved")
+
+        post_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+        self.assertEqual(pre_hashes, post_hashes, "Existing PDF hashes must remain unchanged after rejection")
+
+    def test_36_unexpected_empty_nested_directory_rejected_and_preserved(self):
+        """36. Verify unexpected empty nested directory is rejected before swap and preserved."""
+        temp_pub = self._create_temp_pdf_copy()
+        pre_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+
+        extra_nested = temp_pub / "engineering" / "archive"
+        extra_nested.mkdir(parents=True)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            generate_all_pdfs(
+                source_dir_path=self.source_dir,
+                output_dir_path=temp_pub,
+                spec_dir_path=self.spec_dir,
+            )
+
+        self.assertIn("unexpected filesystem entries", str(ctx.exception))
+        self.assertTrue(extra_nested.exists(), "Unexpected nested directory must be preserved")
+
+        post_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+        self.assertEqual(pre_hashes, post_hashes, "Existing PDF hashes must remain unchanged after rejection")
+
+    def test_37_backup_deletion_failure_preserves_valid_published_collection(self):
+        """37. Verify backup deletion failure after successful publication does not destroy valid collection."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_bk_del_")
+        target_dir = base_dir / "published_pdfs"
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        # First publication
+        generate_all_pdfs(self.source_dir, target_dir, self.spec_dir)
+
+        # Second publication where backup_base deletion fails
+        orig_rmtree = shutil.rmtree
+
+        def mock_rmtree_bk(path, *args, **kwargs):
+            if "astercite_pdf_backup_" in str(path):
+                raise PermissionError("Simulated backup directory lock")
+            return orig_rmtree(path, *args, **kwargs)
+
+        with patch("shutil.rmtree", side_effect=mock_rmtree_bk):
+            paths = generate_all_pdfs(self.source_dir, target_dir, self.spec_dir)
+            self.assertEqual(len(paths), 24)
+
+        # Valid published collection is preserved
+        errors = validate_pdfs(target_dir, self.source_dir, self.spec_dir)
+        self.assertEqual(errors, [])
+
+    def test_38_failed_replacement_removal_preserves_recoverable_backup(self):
+        """38. Verify failure during replacement cleanup preserves recoverable backup and reports location."""
+        temp_pub = self._create_temp_pdf_copy()
+
+        orig_rmtree = shutil.rmtree
+
+        # When post-publication validation fails AND removing output_dir fails
+        orig_validate = validate_pdfs
+
+        def fail_final(*args, **kwargs):
+            out_p = Path(kwargs.get("output_dir_path", args[0] if args else ""))
+            if out_p.resolve() == temp_pub.resolve():
+                return ["Simulated post-publication checksum discrepancy"]
+            return orig_validate(*args, **kwargs)
+
+        def mock_rmtree_fail_output(path, *args, **kwargs):
+            if Path(path).resolve() == temp_pub.resolve():
+                raise PermissionError("Simulated output directory lock during rollback")
+            return orig_rmtree(path, *args, **kwargs)
+
+        with patch("scripts.validate_pdfs.validate_pdfs", side_effect=fail_final):
+            with patch("shutil.rmtree", side_effect=mock_rmtree_fail_output):
+                with self.assertRaises(RuntimeError) as ctx:
+                    generate_all_pdfs(self.source_dir, temp_pub, self.spec_dir)
+
+        msg = str(ctx.exception)
+        self.assertIn("CRITICAL: Rollback failed", msg)
+        self.assertIn("previous collection preserved at", msg)
 
 
 if __name__ == "__main__":

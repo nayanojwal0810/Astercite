@@ -170,40 +170,94 @@ def validate_pdfs(
             errors.append(f"Failed to read metadata from PDF {doc_id}: {exc}")
             continue
 
-        # Extract text from all pages and strip headers/footers only from their expected locations
+        # Extract text from all pages and identify headers/footers based on actual layout and position
         extract_failed = False
         cleaned_page_texts: list[str] = []
         raw_page_texts: list[str] = []
         for page_idx in range(num_pages):
             try:
                 page = reader.pages[page_idx]
-                ptxt = page.extract_text() or ""
-                if not ptxt.strip():
-                    errors.append(f"PDF {doc_id} page {page_idx + 1} has no extractable text")
-                raw_page_texts.append(ptxt)
 
-                # Running footer at the bottom of each page
-                footer_match = re.search(
-                    r"\n?Aster Systems Internal Documentation\s+Page \d+ of \d+\s*$",
-                    ptxt.rstrip(),
-                )
-                if not footer_match:
-                    errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running footer")
-                else:
-                    ptxt = ptxt.rstrip()[: footer_match.start()]
+                header_parts: list[str] = []
+                footer_parts: list[str] = []
+                body_parts: list[str] = []
 
-                # Running header at the top of pages > 1
-                if page_idx > 0:
-                    header_match = re.match(
-                        r"^\s*Aster Systems( — [A-Z0-9-]+)?\s*\n?",
-                        ptxt.lstrip(),
-                    )
-                    if not header_match:
-                        errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running header")
+                def visitor_extract(text, cm, tm, font_dict, font_size):
+                    if not text:
+                        return
+                    y = tm[5] if tm is not None and len(tm) >= 6 else 0
+                    # Running header is drawn at y ~ 799.4 pt with font_size == 8
+                    if y > 790 and font_size == 8:
+                        header_parts.append(text)
+                    # Running footer is drawn at y ~ 34.0 pt with font_size == 8
+                    elif y < 50 and font_size == 8:
+                        footer_parts.append(text)
                     else:
-                        ptxt = ptxt.lstrip()[header_match.end() :]
+                        body_parts.append(text)
 
-                cleaned_page_texts.append(ptxt)
+                ptxt_raw = page.extract_text(visitor_text=visitor_extract) or ""
+                raw_page_texts.append(ptxt_raw)
+
+                if not ptxt_raw.strip():
+                    errors.append(f"PDF {doc_id} page {page_idx + 1} has no extractable text")
+
+                header_str = "".join(header_parts).strip()
+                footer_str = "".join(footer_parts).strip()
+                body_str = "".join(body_parts).strip()
+
+                expected_footer_pfx = "Aster Systems Internal Documentation"
+                expected_page_str = f"Page {page_idx + 1} of {num_pages}"
+
+                # If coordinate visitor successfully separated footer:
+                if footer_str and expected_footer_pfx in footer_str:
+                    if expected_page_str not in footer_str:
+                        errors.append(
+                            f"PDF {doc_id} page {page_idx + 1} footer missing page numbering '{expected_page_str}'"
+                        )
+                    if page_idx > 0:
+                        expected_header = f"Aster Systems — {doc_id}"
+                        if expected_header not in header_str and "Aster Systems" not in header_str:
+                            errors.append(
+                                f"PDF {doc_id} page {page_idx + 1} missing standard running header"
+                            )
+                    cleaned_page_texts.append(body_str)
+                else:
+                    # Fallback to layout-aware stream parsing on ptxt_raw
+                    ptxt = ptxt_raw.strip()
+                    # 1. Running footer at bottom of extracted text
+                    footer_match = re.search(
+                        r"\n?Aster Systems Internal Documentation\s+Page \d+ of \d+\s*$",
+                        ptxt,
+                    )
+                    if not footer_match:
+                        errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running footer")
+                    else:
+                        ptxt = ptxt[: footer_match.start()].rstrip()
+
+                    # 2. Running header on pages > 1: check actual extraction order
+                    # ReportLab two-pass canvas appends header commands at the end of the content stream (right before footer),
+                    # while other generators or coordinate sorters place it at the top of the page.
+                    if page_idx > 0:
+                        header_end_match = re.search(
+                            r"\n?Aster Systems( — [A-Z0-9-]+)?\s*$",
+                            ptxt,
+                        )
+                        if header_end_match:
+                            ptxt = ptxt[: header_end_match.start()].rstrip()
+                        else:
+                            header_top_match = re.match(
+                                r"^\s*Aster Systems( — [A-Z0-9-]+)?\s*\n?",
+                                ptxt,
+                            )
+                            if header_top_match:
+                                ptxt = ptxt[header_top_match.end() :].lstrip()
+                            else:
+                                errors.append(
+                                    f"PDF {doc_id} page {page_idx + 1} missing standard running header"
+                                )
+
+                    cleaned_page_texts.append(ptxt)
+
             except Exception as exc:
                 errors.append(f"Failed to extract text from PDF {doc_id} page {page_idx + 1}: {exc}")
                 extract_failed = True
