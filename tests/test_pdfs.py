@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,7 @@ import unittest
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pypdf
+from reportlab.lib.units import mm
 import yaml
 
 # Ensure project root is in sys.path
@@ -33,6 +35,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.generate_pdfs import (
+    NumberedCanvas,
     _get_temp_dir_on_same_volume,
     build_pdf,
     generate_all_pdfs,
@@ -762,27 +765,35 @@ class TestPDFs(unittest.TestCase):
         temp_src = self._create_temp_source_copy()
         temp_out = self._create_temp_pdf_copy()
 
-        # Expand ENG-001 in temp_src with extra paragraphs to force a page break
+        # Expand ENG-001 in temp_src by inserting extra paragraphs in Section 1 (Purpose and Scope)
+        # while preserving all 7 YAML metadata fields, title, 6 section headings, and 3 canonical fact markers
         eng_src_path = temp_src / "engineering" / "eng_001.md"
+        original_content = eng_src_path.read_text(encoding="utf-8")
+
+        extra_paragraphs = "\n\n".join(
+            f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
+            for i in range(14)
+        )
+        target = "## P1 Incident Acknowledgment"
+        self.assertIn(target, original_content)
+        expanded_content = original_content.replace(target, f"{extra_paragraphs}\n\n{target}", 1)
+        eng_src_path.write_text(expanded_content, encoding="utf-8")
+
+        # Verify all 7 YAML metadata keys and fact markers remain intact
+        fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", expanded_content, re.DOTALL)
+        self.assertIsNotNone(fm_match)
+        parsed_yaml = yaml.safe_load(fm_match.group(1))
+        self.assertEqual(len(parsed_yaml), 7)
+        for k in ["document_id", "document_version", "title", "owner_department", "classification", "effective_from", "source_type"]:
+            self.assertIn(k, parsed_yaml)
+        self.assertIn("<!-- fact_id: ENG001_F01 -->", expanded_content)
+        self.assertIn("<!-- fact_id: ENG001_F02 -->", expanded_content)
+        self.assertIn("<!-- fact_id: ENG001_F03 -->", expanded_content)
+
+        # Parse and build multi-page PDF into temp_out
         meta, title, secs = load_source_document(eng_src_path)
-        mutated_secs = [(s[0], list(s[1])) for s in secs]
-        for i in range(12):
-            mutated_secs[0][1].append(
-                f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
-            )
-
-        # Write mutated Markdown back
-        md_lines = ["---", "document_id: ENG-001", "document_version: v1", "owner_department: engineering", "classification: department", "---", "", f"# {title}", ""]
-        for s_title, paras in mutated_secs:
-            md_lines.append(f"## {s_title}")
-            for p in paras:
-                md_lines.append(p)
-                md_lines.append("")
-        eng_src_path.write_text("\n".join(md_lines), encoding="utf-8")
-
-        # Build multi-page PDF into temp_out
         eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
-        build_pdf(eng_pdf_path, meta, title, mutated_secs)
+        build_pdf(eng_pdf_path, meta, title, secs)
 
         # 1. Assert PDF has at least two pages
         reader = pypdf.PdfReader(str(eng_pdf_path))
@@ -796,7 +807,13 @@ class TestPDFs(unittest.TestCase):
             if page_idx > 0:
                 self.assertIn("Aster Systems — ENG-001", p_text)
 
-        # 3. Exact full-text validation passes
+        # 3. Canonical factual paragraphs remain intact in PDF
+        full_pdf_text = " ".join((page.extract_text() or "") for page in reader.pages)
+        self.assertIn("Designated on-call engineers must acknowledge all P1 incident alerts within 10 minutes", full_pdf_text)
+        self.assertIn("On-call engineers are required to acknowledge P2 incident alerts within 30 minutes", full_pdf_text)
+        self.assertIn("publish a complete incident report within 2 business days", full_pdf_text)
+
+        # 4. Exact full-text validation passes
         errors = validate_pdfs(
             output_dir_path=temp_out,
             source_dir_path=temp_src,
@@ -810,23 +827,21 @@ class TestPDFs(unittest.TestCase):
         temp_out = self._create_temp_pdf_copy()
 
         eng_src_path = temp_src / "engineering" / "eng_001.md"
-        meta, title, secs = load_source_document(eng_src_path)
-        mutated_secs = [(s[0], list(s[1])) for s in secs]
-        for i in range(12):
-            mutated_secs[0][1].append(
-                f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
-            )
+        original_content = eng_src_path.read_text(encoding="utf-8")
 
-        md_lines = ["---", "document_id: ENG-001", "document_version: v1", "owner_department: engineering", "classification: department", "---", "", f"# {title}", ""]
-        for s_title, paras in mutated_secs:
-            md_lines.append(f"## {s_title}")
-            for p in paras:
-                md_lines.append(p)
-                md_lines.append("")
-        eng_src_path.write_text("\n".join(md_lines), encoding="utf-8")
+        extra_paragraphs = "\n\n".join(
+            f"Operational procedure addendum paragraph {i} defining detailed technical workflows for incident management."
+            for i in range(14)
+        )
+        target = "## P1 Incident Acknowledgment"
+        self.assertIn(target, original_content)
+        expanded_content = original_content.replace(target, f"{extra_paragraphs}\n\n{target}", 1)
+        eng_src_path.write_text(expanded_content, encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_src_path)
 
         # In PDF only, insert an extra unapproved paragraph on page 2
-        mutated_pdf_secs = [(s[0], list(s[1])) for s in mutated_secs]
+        mutated_pdf_secs = [(s[0], list(s[1])) for s in secs]
         mutated_pdf_secs[3][1].append("Unauthorized injected clause on page two.")
 
         eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
@@ -946,9 +961,15 @@ class TestPDFs(unittest.TestCase):
                 raise PermissionError("Simulated backup directory lock")
             return orig_rmtree(path, *args, **kwargs)
 
-        with patch("shutil.rmtree", side_effect=mock_rmtree_bk):
-            paths = generate_all_pdfs(self.source_dir, target_dir, self.spec_dir)
-            self.assertEqual(len(paths), 24)
+        with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+            with patch("shutil.rmtree", side_effect=mock_rmtree_bk):
+                paths = generate_all_pdfs(self.source_dir, target_dir, self.spec_dir)
+                self.assertEqual(len(paths), 24)
+
+            stderr_val = mock_stderr.getvalue()
+            self.assertIn("Warning: Failed to clean up backup directory at", stderr_val)
+            self.assertIn("astercite_pdf_backup_", stderr_val)
+            self.assertIn("Simulated backup directory lock", stderr_val)
 
         # Valid published collection is preserved
         errors = validate_pdfs(target_dir, self.source_dir, self.spec_dir)
@@ -957,10 +978,13 @@ class TestPDFs(unittest.TestCase):
     def test_38_failed_replacement_removal_preserves_recoverable_backup(self):
         """38. Verify failure during replacement cleanup preserves recoverable backup and reports location."""
         temp_pub = self._create_temp_pdf_copy()
+        pre_hashes = {
+            str(p.relative_to(temp_pub)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in temp_pub.rglob("*_v1.pdf")
+        }
+        self.assertEqual(len(pre_hashes), 24)
 
         orig_rmtree = shutil.rmtree
-
-        # When post-publication validation fails AND removing output_dir fails
         orig_validate = validate_pdfs
 
         def fail_final(*args, **kwargs):
@@ -982,6 +1006,272 @@ class TestPDFs(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("CRITICAL: Rollback failed", msg)
         self.assertIn("previous collection preserved at", msg)
+
+        # Extract backup path from message and verify physical persistence
+        m = re.search(r"previous collection preserved at '([^']+)'", msg)
+        self.assertIsNotNone(m, "Exception message must report exact backup path")
+        backup_path = Path(m.group(1))
+
+        self.assertTrue(backup_path.exists(), f"Preserved backup must physically exist at {backup_path}")
+        self.assertTrue(backup_path.is_dir(), f"Preserved backup must be a directory at {backup_path}")
+
+        backup_hashes = {
+            str(p.relative_to(backup_path)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in backup_path.rglob("*_v1.pdf")
+        }
+        self.assertEqual(len(backup_hashes), 24, "Preserved backup must contain all 24 PDFs")
+        self.assertEqual(pre_hashes, backup_hashes, "Preserved backup SHA-256 hashes must match originals exactly")
+
+        # Clean up test-owned backup base
+        shutil.rmtree(backup_path.parent, ignore_errors=True)
+
+    def test_39_existing_regular_file_at_output_path_rejected_and_preserved(self):
+        """39. Verify existing regular file at output path is rejected and left unchanged."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_reg_file_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        file_path = base_dir / "blocked_file.txt"
+        file_path.write_text("Distinctive file content that must not be deleted or overwritten 12345", encoding="utf-8")
+        orig_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+
+        with self.assertRaises(RuntimeError) as ctx:
+            generate_all_pdfs(
+                source_dir_path=self.source_dir,
+                output_dir_path=file_path,
+                spec_dir_path=self.spec_dir,
+            )
+
+        self.assertIn("existing regular file", str(ctx.exception))
+        self.assertTrue(file_path.exists(), "Regular file at output path must not be deleted or moved")
+        new_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        self.assertEqual(orig_hash, new_hash, "Regular file SHA-256 must remain identical")
+
+    def test_40_broken_junction_or_symlink_at_output_path_rejected_and_preserved(self):
+        """40. Verify broken directory junction or symlink at output path is rejected without deletion."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_broken_junc_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        target_dir = base_dir / "target_dir"
+        target_dir.mkdir()
+        link_path = base_dir / "broken_link"
+
+        created = False
+        try:
+            import _winapi
+            _winapi.CreateJunction(str(target_dir), str(link_path))
+            target_dir.rmdir()  # make junction broken
+            created = True
+        except Exception:
+            try:
+                os.symlink(str(target_dir), str(link_path), target_is_directory=True)
+                target_dir.rmdir()
+                created = True
+            except Exception:
+                pass
+
+        if not created:
+            self.skipTest("Filesystem links/junctions not supported in current environment")
+
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=link_path,
+                    spec_dir_path=self.spec_dir,
+                )
+            msg = str(ctx.exception)
+            self.assertTrue(
+                "unsafe directory junction" in msg or "unsafe symbolic link" in msg,
+                f"Expected unsafe link/junction error, got: {msg}",
+            )
+            # Ensure broken link was not deleted or replaced
+            st = link_path.lstat()
+            self.assertIsNotNone(st)
+        finally:
+            try:
+                os.rmdir(str(link_path))
+            except Exception:
+                pass
+
+    def test_41_directory_junction_at_output_path_rejected_and_preserved(self):
+        """41. Verify valid directory junction at output path is rejected and target preserved."""
+        base_dir = _get_temp_dir_on_same_volume(PROJECT_ROOT / "data" / "pdfs", prefix="astercite_valid_junc_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        target_dir = base_dir / "real_target"
+        target_dir.mkdir()
+        (target_dir / "important_data.txt").write_text("protected target data", encoding="utf-8")
+        link_path = base_dir / "junction_link"
+
+        created = False
+        try:
+            import _winapi
+            _winapi.CreateJunction(str(target_dir), str(link_path))
+            created = True
+        except Exception:
+            try:
+                os.symlink(str(target_dir), str(link_path), target_is_directory=True)
+                created = True
+            except Exception:
+                pass
+
+        if not created:
+            self.skipTest("Filesystem links/junctions not supported in current environment")
+
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_all_pdfs(
+                    source_dir_path=self.source_dir,
+                    output_dir_path=link_path,
+                    spec_dir_path=self.spec_dir,
+                )
+            msg = str(ctx.exception)
+            self.assertTrue(
+                "unsafe directory junction" in msg or "unsafe symbolic link" in msg,
+                f"Expected unsafe link/junction error, got: {msg}",
+            )
+            self.assertTrue(target_dir.exists(), "Target directory must be preserved")
+            self.assertTrue((target_dir / "important_data.txt").exists(), "Target contents must be preserved")
+        finally:
+            try:
+                os.rmdir(str(link_path))
+            except Exception:
+                pass
+
+    def test_42_multipage_pdf_wrong_header_id_rejected(self):
+        """42. Verify multi-page PDF validator rejects wrong document ID in running header."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        eng_src_path = temp_src / "engineering" / "eng_001.md"
+        orig_content = eng_src_path.read_text(encoding="utf-8")
+        extra_p = "\n\n".join(f"Extra paragraph {i} for page break." for i in range(14))
+        target = "## P1 Incident Acknowledgment"
+        eng_src_path.write_text(orig_content.replace(target, f"{extra_p}\n\n{target}", 1), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_src_path)
+        # Mutate document_id in header canvas
+        class WrongHeaderCanvas(NumberedCanvas):
+            def draw_header_footer(self, page_count: int) -> None:
+                self.saveState()
+                self.setFont("Helvetica", 8)
+                if self._pageNumber > 1:
+                    # Wrong document ID in running header
+                    self.drawString(20 * mm, 297 * mm - 15 * mm, "Aster Systems — ENG-002")
+                self.drawString(20 * mm, 12 * mm, "Aster Systems Internal Documentation")
+                self.drawRightString(210 * mm - 20 * mm, 12 * mm, f"Page {self._pageNumber} of {page_count}")
+                self.restoreState()
+
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        with patch("scripts.generate_pdfs.NumberedCanvas", WrongHeaderCanvas):
+            build_pdf(eng_pdf_path, meta, title, secs)
+
+        errors = validate_pdfs(temp_out, temp_src, self.spec_dir)
+        self.assertTrue(
+            any("running header has wrong document ID" in err and "ENG-001" in err for err in errors),
+            f"Expected wrong header ID error, got: {errors}",
+        )
+
+    def test_43_multipage_pdf_extra_header_content_rejected(self):
+        """43. Verify multi-page PDF validator rejects extra words or unauthorized content in running header."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        eng_src_path = temp_src / "engineering" / "eng_001.md"
+        orig_content = eng_src_path.read_text(encoding="utf-8")
+        extra_p = "\n\n".join(f"Extra paragraph {i} for page break." for i in range(14))
+        target = "## P1 Incident Acknowledgment"
+        eng_src_path.write_text(orig_content.replace(target, f"{extra_p}\n\n{target}", 1), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_src_path)
+
+        class ExtraHeaderCanvas(NumberedCanvas):
+            def draw_header_footer(self, page_count: int) -> None:
+                super().draw_header_footer(page_count)
+                if self._pageNumber > 1:
+                    self.saveState()
+                    self.setFont("Helvetica", 8)
+                    self.drawString(100 * mm, 297 * mm - 15 * mm, "CONFIDENTIAL RESTRICTED")
+                    self.restoreState()
+
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        with patch("scripts.generate_pdfs.NumberedCanvas", ExtraHeaderCanvas):
+            build_pdf(eng_pdf_path, meta, title, secs)
+
+        errors = validate_pdfs(temp_out, temp_src, self.spec_dir)
+        self.assertTrue(
+            any("running header contains extra or malformed content" in err for err in errors),
+            f"Expected extra header content error, got: {errors}",
+        )
+
+    def test_44_multipage_pdf_extra_footer_content_rejected(self):
+        """44. Verify multi-page PDF validator rejects extra words or unauthorized text in running footer."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        meta, title, secs = load_source_document(temp_src / "engineering" / "eng_001.md")
+
+        class ExtraFooterCanvas(NumberedCanvas):
+            def draw_header_footer(self, page_count: int) -> None:
+                super().draw_header_footer(page_count)
+                self.saveState()
+                self.setFont("Helvetica", 8)
+                self.drawString(100 * mm, 12 * mm, "UNAUTHORIZED EXTRA FOOTER")
+                self.restoreState()
+
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        with patch("scripts.generate_pdfs.NumberedCanvas", ExtraFooterCanvas):
+            build_pdf(eng_pdf_path, meta, title, secs)
+
+        errors = validate_pdfs(temp_out, temp_src, self.spec_dir)
+        self.assertTrue(
+            any("invalid or extra running footer content" in err for err in errors),
+            f"Expected extra footer content error, got: {errors}",
+        )
+
+    def test_45_multipage_pdf_incorrect_page_number_rejected(self):
+        """45. Verify multi-page PDF validator rejects incorrect page numbers in footer."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        meta, title, secs = load_source_document(temp_src / "engineering" / "eng_001.md")
+
+        class WrongPageNumCanvas(NumberedCanvas):
+            def draw_header_footer(self, page_count: int) -> None:
+                self.saveState()
+                self.setFont("Helvetica", 8)
+                self.drawString(20 * mm, 12 * mm, "Aster Systems Internal Documentation")
+                # Incorrect page number
+                self.drawRightString(210 * mm - 20 * mm, 12 * mm, f"Page 9 of {page_count}")
+                self.restoreState()
+
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        with patch("scripts.generate_pdfs.NumberedCanvas", WrongPageNumCanvas):
+            build_pdf(eng_pdf_path, meta, title, secs)
+
+        errors = validate_pdfs(temp_out, temp_src, self.spec_dir)
+        self.assertTrue(
+            any("footer has incorrect page numbering" in err for err in errors),
+            f"Expected incorrect page numbering error, got: {errors}",
+        )
+
+    def test_46_source_text_with_company_name_and_doc_id_preserved_and_validated(self):
+        """46. Verify source text mentioning company name and document IDs is preserved and passes validation."""
+        temp_src = self._create_temp_source_copy()
+        temp_out = self._create_temp_pdf_copy()
+
+        # ENG-001 legitimately contains 'Aster Systems' and cross-references 'ENG-002' in body
+        eng_src_path = temp_src / "engineering" / "eng_001.md"
+        src_text = eng_src_path.read_text(encoding="utf-8")
+        self.assertIn("Aster Systems", src_text)
+        self.assertIn("ENG-002", src_text)
+
+        errors = validate_pdfs(temp_out, temp_src, self.spec_dir)
+        self.assertEqual(errors, [], f"Valid source text with doc ID references must pass validation: {errors}")
+
+        # Also confirm presence in extracted PDF text
+        eng_pdf_path = temp_out / "engineering" / "eng_001_v1.pdf"
+        reader = pypdf.PdfReader(str(eng_pdf_path))
+        pdf_full = " ".join((page.extract_text() or "") for page in reader.pages)
+        self.assertIn("Aster Systems", pdf_full)
+        self.assertIn("ENG-002", pdf_full)
 
 
 if __name__ == "__main__":

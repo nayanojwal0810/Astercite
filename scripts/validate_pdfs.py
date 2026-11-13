@@ -181,16 +181,25 @@ def validate_pdfs(
                 header_parts: list[str] = []
                 footer_parts: list[str] = []
                 body_parts: list[str] = []
+                has_coordinates = True
 
                 def visitor_extract(text, cm, tm, font_dict, font_size):
+                    nonlocal has_coordinates
                     if not text:
                         return
-                    y = tm[5] if tm is not None and len(tm) >= 6 else 0
-                    # Running header is drawn at y ~ 799.4 pt with font_size == 8
-                    if y > 790 and font_size == 8:
+                    if tm is None or len(tm) < 6:
+                        has_coordinates = False
+                        body_parts.append(text)
+                        return
+                    cm_val = cm if (cm is not None and len(cm) >= 6) else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                    # Compute global y-coordinate in page space
+                    y_global = cm_val[1] * tm[4] + cm_val[3] * tm[5] + cm_val[5]
+
+                    # Running header margin zone: y_global > 775 pt
+                    if y_global > 775:
                         header_parts.append(text)
-                    # Running footer is drawn at y ~ 34.0 pt with font_size == 8
-                    elif y < 50 and font_size == 8:
+                    # Running footer margin zone: y_global < 60 pt
+                    elif y_global < 60:
                         footer_parts.append(text)
                     else:
                         body_parts.append(text)
@@ -201,60 +210,124 @@ def validate_pdfs(
                 if not ptxt_raw.strip():
                     errors.append(f"PDF {doc_id} page {page_idx + 1} has no extractable text")
 
-                header_str = "".join(header_parts).strip()
-                footer_str = "".join(footer_parts).strip()
-                body_str = "".join(body_parts).strip()
-
-                expected_footer_pfx = "Aster Systems Internal Documentation"
+                expected_footer = f"Aster Systems Internal Documentation Page {page_idx + 1} of {num_pages}"
                 expected_page_str = f"Page {page_idx + 1} of {num_pages}"
+                expected_header = f"Aster Systems — {doc_id}"
 
-                # If coordinate visitor successfully separated footer:
-                if footer_str and expected_footer_pfx in footer_str:
-                    if expected_page_str not in footer_str:
-                        errors.append(
-                            f"PDF {doc_id} page {page_idx + 1} footer missing page numbering '{expected_page_str}'"
-                        )
-                    if page_idx > 0:
-                        expected_header = f"Aster Systems — {doc_id}"
-                        if expected_header not in header_str and "Aster Systems" not in header_str:
+                # If coordinate visitor successfully separated footer/header candidates:
+                if has_coordinates and (footer_parts or header_parts):
+                    header_norm = " ".join("".join(header_parts).split())
+                    footer_norm = " ".join("".join(footer_parts).split())
+
+                    # 1. Strict running header validation
+                    if page_idx == 0:
+                        if header_norm:
                             errors.append(
-                                f"PDF {doc_id} page {page_idx + 1} missing standard running header"
+                                f"PDF {doc_id} page 1 contains unexpected running header or margin text: '{header_norm}'"
                             )
-                    cleaned_page_texts.append(body_str)
+                    else:
+                        if not header_norm:
+                            errors.append(
+                                f"PDF {doc_id} page {page_idx + 1} missing required running header '{expected_header}'"
+                            )
+                        elif header_norm == expected_header:
+                            pass
+                        elif header_norm.startswith("Aster Systems — "):
+                            trailing = header_norm[len("Aster Systems — ") :].strip()
+                            if trailing.startswith(f"{doc_id} ") or trailing.endswith(f" {doc_id}"):
+                                errors.append(
+                                    f"PDF {doc_id} page {page_idx + 1} running header contains extra or malformed content: '{header_norm}' (expected '{expected_header}')"
+                                )
+                            elif trailing != doc_id:
+                                errors.append(
+                                    f"PDF {doc_id} page {page_idx + 1} running header has wrong document ID: '{header_norm}' (expected '{expected_header}')"
+                                )
+                            else:
+                                errors.append(
+                                    f"PDF {doc_id} page {page_idx + 1} running header contains extra or malformed content: '{header_norm}' (expected '{expected_header}')"
+                                )
+                        else:
+                            errors.append(
+                                f"PDF {doc_id} page {page_idx + 1} invalid or extra running header content: '{header_norm}' (expected '{expected_header}')"
+                            )
+
+                    # 2. Strict running footer validation
+                    if not footer_norm:
+                        errors.append(
+                            f"PDF {doc_id} page {page_idx + 1} missing standard running footer: expected '{expected_footer}'"
+                        )
+                    elif footer_norm == expected_footer:
+                        pass
+                    elif "Aster Systems Internal Documentation" in footer_norm and expected_page_str not in footer_norm:
+                        errors.append(
+                            f"PDF {doc_id} page {page_idx + 1} footer has incorrect page numbering: '{footer_norm}' (expected '{expected_footer}')"
+                        )
+                    else:
+                        errors.append(
+                            f"PDF {doc_id} page {page_idx + 1} invalid or extra running footer content: '{footer_norm}' (expected '{expected_footer}')"
+                        )
+
+                    cleaned_page_texts.append("".join(body_parts).strip())
                 else:
                     # Fallback to layout-aware stream parsing on ptxt_raw
                     ptxt = ptxt_raw.strip()
                     # 1. Running footer at bottom of extracted text
                     footer_match = re.search(
-                        r"\n?Aster Systems Internal Documentation\s+Page \d+ of \d+\s*$",
+                        rf"\n?Aster Systems Internal Documentation\s+Page {page_idx + 1} of {num_pages}\s*$",
                         ptxt,
                     )
-                    if not footer_match:
-                        errors.append(f"PDF {doc_id} page {page_idx + 1} missing standard running footer")
-                    else:
+                    if footer_match:
                         ptxt = ptxt[: footer_match.start()].rstrip()
+                    else:
+                        generic_footer = re.search(r"\n?Aster Systems Internal Documentation.*$", ptxt)
+                        if generic_footer:
+                            errors.append(
+                                f"PDF {doc_id} page {page_idx + 1} footer has incorrect content or numbering: '{generic_footer.group(0).strip()}' (expected '{expected_footer}')"
+                            )
+                            ptxt = ptxt[: generic_footer.start()].rstrip()
+                        else:
+                            errors.append(
+                                f"PDF {doc_id} page {page_idx + 1} missing standard running footer: expected '{expected_footer}'"
+                            )
 
-                    # 2. Running header on pages > 1: check actual extraction order
-                    # ReportLab two-pass canvas appends header commands at the end of the content stream (right before footer),
-                    # while other generators or coordinate sorters place it at the top of the page.
-                    if page_idx > 0:
+                    # 2. Running header on pages > 1 (or check absence on page 1)
+                    if page_idx == 0:
+                        p1_header_match = re.search(r"\bAster Systems\s*—\s*[^\n]+", ptxt)
+                        if p1_header_match:
+                            errors.append(
+                                f"PDF {doc_id} page 1 contains unexpected running header: '{p1_header_match.group(0).strip()}'"
+                            )
+                    else:
                         header_end_match = re.search(
-                            r"\n?Aster Systems( — [A-Z0-9-]+)?\s*$",
+                            rf"\n?{re.escape(expected_header)}\s*$",
                             ptxt,
                         )
                         if header_end_match:
                             ptxt = ptxt[: header_end_match.start()].rstrip()
                         else:
                             header_top_match = re.match(
-                                r"^\s*Aster Systems( — [A-Z0-9-]+)?\s*\n?",
+                                rf"^\s*{re.escape(expected_header)}\s*\n?",
                                 ptxt,
                             )
                             if header_top_match:
                                 ptxt = ptxt[header_top_match.end() :].lstrip()
                             else:
-                                errors.append(
-                                    f"PDF {doc_id} page {page_idx + 1} missing standard running header"
-                                )
+                                wrong_end = re.search(r"\n?(Aster Systems\s*—\s*[^\n]+)\s*$", ptxt)
+                                wrong_top = re.match(r"^\s*(Aster Systems\s*—\s*[^\n]+)\s*\n?", ptxt)
+                                if wrong_end:
+                                    errors.append(
+                                        f"PDF {doc_id} page {page_idx + 1} running header invalid or extra content: '{wrong_end.group(1).strip()}' (expected '{expected_header}')"
+                                    )
+                                    ptxt = ptxt[: wrong_end.start()].rstrip()
+                                elif wrong_top:
+                                    errors.append(
+                                        f"PDF {doc_id} page {page_idx + 1} running header invalid or extra content: '{wrong_top.group(1).strip()}' (expected '{expected_header}')"
+                                    )
+                                    ptxt = ptxt[wrong_top.end() :].lstrip()
+                                else:
+                                    errors.append(
+                                        f"PDF {doc_id} page {page_idx + 1} missing standard running header: expected '{expected_header}'"
+                                    )
 
                     cleaned_page_texts.append(ptxt)
 

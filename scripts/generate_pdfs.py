@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import xml.sax.saxutils
@@ -309,6 +310,68 @@ def inspect_destination_for_unexpected_entries(
     return sorted(set(unexpected))
 
 
+def validate_output_destination_path(output_path: Path) -> None:
+    """Validate that output_path is either absent or an ordinary directory.
+
+    Rejects regular files, symbolic links (valid or broken), directory junctions,
+    reparse points, and non-directories before any inspection, staging, or publication.
+    Never alters, moves, or deletes rejected objects.
+    """
+    try:
+        st = output_path.lstat()
+    except FileNotFoundError:
+        # Genuinely absent path is accepted
+        return
+    except OSError as err:
+        if not output_path.exists(follow_symlinks=False):
+            return
+        raise RuntimeError(
+            f"Refusing publication: unable to inspect output path '{output_path}': {err}"
+        ) from err
+
+    # Check for symbolic links (valid or broken)
+    if output_path.is_symlink():
+        raise RuntimeError(
+            f"Refusing publication: output path '{output_path}' is an unsafe symbolic link"
+        )
+
+    # Check for Windows directory junctions
+    is_junc = False
+    if hasattr(output_path, "is_junction"):
+        try:
+            is_junc = output_path.is_junction()
+        except Exception:
+            pass
+    if not is_junc and hasattr(os.path, "isjunction"):
+        try:
+            is_junc = os.path.isjunction(str(output_path))
+        except Exception:
+            pass
+    if is_junc:
+        raise RuntimeError(
+            f"Refusing publication: output path '{output_path}' is an unsafe directory junction"
+        )
+
+    # Check for Windows reparse points
+    st_attrs = getattr(st, "st_file_attributes", 0)
+    if st_attrs & 0x400:  # FILE_ATTRIBUTE_REPARSE_POINT
+        raise RuntimeError(
+            f"Refusing publication: output path '{output_path}' is an unsafe reparse point"
+        )
+
+    # Check for regular files
+    if stat.S_ISREG(st.st_mode):
+        raise RuntimeError(
+            f"Refusing publication: output path '{output_path}' is an existing regular file"
+        )
+
+    # Must be an ordinary directory
+    if not stat.S_ISDIR(st.st_mode):
+        raise RuntimeError(
+            f"Refusing publication: output path '{output_path}' is not an ordinary directory"
+        )
+
+
 def generate_all_pdfs(
     source_dir_path: Path | str | None = None,
     output_dir_path: Path | str | None = None,
@@ -322,7 +385,10 @@ def generate_all_pdfs(
     output_dir = Path(output_dir_path) if output_dir_path else PROJECT_ROOT / "data" / "pdfs"
     spec_dir = Path(spec_dir_path) if spec_dir_path else PROJECT_ROOT / "data" / "spec"
 
-    # Step 1: Pre-generation source validation
+    # Step 1: Pre-generation output path safety check
+    validate_output_destination_path(output_dir)
+
+    # Step 2: Pre-generation source validation
     src_errors = validate_documents(source_dir, spec_dir)
     if src_errors:
         raise RuntimeError(
@@ -330,7 +396,7 @@ def generate_all_pdfs(
             + "\n".join(f"  - {err}" for err in src_errors)
         )
 
-    # Step 2: Read document inventory
+    # Step 3: Read document inventory
     inv_file = spec_dir / "document_inventory.csv"
     if not inv_file.exists():
         raise FileNotFoundError(f"Missing inventory file: {inv_file}")
