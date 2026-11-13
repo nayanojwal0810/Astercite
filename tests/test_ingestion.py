@@ -557,6 +557,506 @@ class TestIngestion(unittest.TestCase):
         errors = validate_chunks(temp_jsonl)
         self.assertTrue(any("does not match PDF text" in e for e in errors), f"Expected unapproved text error: {errors}")
 
+    # --- Independent Source Verification Tests (36 to 40) ---
+
+    def test_36_source_verification_changed_paragraph_rejected(self):
+        """36. Verify standalone chunk validation detects changed paragraph text in source Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_src_change_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        eng_file.write_text(content.replace("operational criteria", "administrative criteria"), encoding="utf-8")
+
+        errors = validate_chunks(self.chunks_file, source_dir_path=temp_src)
+        self.assertTrue(
+            any("paragraph 1 mismatch" in e or "does not match" in e for e in errors),
+            f"Expected source paragraph mismatch error, got: {errors}",
+        )
+
+    def test_37_source_verification_removed_paragraph_rejected(self):
+        """37. Verify standalone chunk validation detects removed paragraph in source Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_src_remove_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        target = "Critical production outages designated as Priority 1 (P1) represent catastrophic service degradations or complete loss of core application functionality affecting customer production environments. Prompt acknowledgment ensures rapid response and timely containment of critical failures.\n"
+        self.assertIn(target, content)
+        eng_file.write_text(content.replace(target, ""), encoding="utf-8")
+
+        errors = validate_chunks(self.chunks_file, source_dir_path=temp_src)
+        self.assertTrue(
+            any("paragraph count mismatch" in e or "missing" in e.lower() for e in errors),
+            f"Expected paragraph count mismatch error, got: {errors}",
+        )
+
+    def test_38_source_verification_changed_numerical_value_rejected(self):
+        """38. Verify standalone chunk validation detects changed numerical value in source Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_src_num_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        self.assertIn("10 minutes", content)
+        eng_file.write_text(content.replace("10 minutes", "15 minutes"), encoding="utf-8")
+
+        errors = validate_chunks(self.chunks_file, source_dir_path=temp_src)
+        self.assertTrue(
+            any("mismatch" in e for e in errors),
+            f"Expected numerical mismatch error, got: {errors}",
+        )
+
+    def test_39_source_verification_changed_punctuation_rejected(self):
+        """39. Verify standalone chunk validation detects altered punctuation in source Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_src_punct_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        self.assertIn("clear communication, and predictable", content)
+        eng_file.write_text(content.replace("clear communication, and predictable", "clear communication; and predictable"), encoding="utf-8")
+
+        errors = validate_chunks(self.chunks_file, source_dir_path=temp_src)
+        self.assertTrue(
+            any("mismatch" in e for e in errors),
+            f"Expected punctuation mismatch error, got: {errors}",
+        )
+
+    def test_40_source_verification_reordered_paragraphs_rejected(self):
+        """40. Verify standalone chunk validation detects reordered paragraphs in source Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_src_reorder_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        shutil.copytree(self.source_dir, temp_src)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        p1 = "Critical production outages designated as Priority 1 (P1) represent catastrophic service degradations or complete loss of core application functionality affecting customer production environments. Prompt acknowledgment ensures rapid response and timely containment of critical failures."
+        marker = "<!-- fact_id: ENG001_F01 -->"
+        p2 = "Designated on-call engineers must acknowledge all P1 incident alerts within 10 minutes of automated notification or escalation dispatch. Acknowledging the alert confirms that an active responder has begun technical investigation and initial diagnostic assessment."
+
+        orig_block = f"{p1}\n{marker}\n{p2}"
+        reordered_block = f"{marker}\n{p2}\n\n{p1}"
+        self.assertIn(orig_block, content)
+        eng_file.write_text(content.replace(orig_block, reordered_block), encoding="utf-8")
+
+        errors = validate_chunks(self.chunks_file, source_dir_path=temp_src)
+        self.assertTrue(
+            any("mismatch" in e for e in errors),
+            f"Expected reordered paragraph error, got: {errors}",
+        )
+
+    # --- Genuine Multi-Page and Cross-Page Tests (41 to 43) ---
+
+    def test_41_genuine_multipage_page_mapping_verified(self):
+        """41. Verify genuine multi-page PDF records accurate page ranges and passes independent validation."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_multi_map_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        extra_p = "\n\n".join(
+            f"Operational addendum paragraph {i} providing system configuration guidelines."
+            for i in range(15)
+        )
+        target = "## P1 Incident Acknowledgment"
+        eng_file.write_text(content.replace(target, f"{extra_p}\n\n{target}"), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        build_pdf(temp_pdf / "engineering" / "eng_001_v1.pdf", meta, title, secs)
+
+        out_jsonl = base_dir / "multi_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        errors = validate_chunks(out_jsonl, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertEqual(errors, [])
+
+        eng_chunks = [c for c in chunks if c["document_id"] == "ENG-001"]
+        p1_chunks = [c for c in eng_chunks if c["page_start"] == 1 and c["page_end"] == 1]
+        p2_chunks = [c for c in eng_chunks if c["page_start"] == 2 and c["page_end"] == 2]
+        self.assertTrue(len(p1_chunks) >= 1)
+        self.assertTrue(len(p2_chunks) >= 1)
+
+    def test_42_wrong_in_range_page_number_rejected(self):
+        """42. Verify standalone validator specifically rejects incorrect in-range page references."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_wrong_page_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        extra_p = "\n\n".join(
+            f"Operational addendum paragraph {i} providing system configuration guidelines."
+            for i in range(15)
+        )
+        target = "## P1 Incident Acknowledgment"
+        eng_file.write_text(content.replace(target, f"{extra_p}\n\n{target}"), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        build_pdf(temp_pdf / "engineering" / "eng_001_v1.pdf", meta, title, secs)
+
+        out_jsonl = base_dir / "multi_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        mutated = [dict(c) for c in chunks]
+        p2_chunk = next(c for c in mutated if c["document_id"] == "ENG-001" and c["page_start"] == 2)
+        p2_chunk["page_start"] = 1
+        p2_chunk["page_end"] = 1
+
+        mutated_file = base_dir / "mutated_chunks.jsonl"
+        with open(mutated_file, "w", encoding="utf-8", newline="\n") as f:
+            for rec in mutated:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        errors = validate_chunks(mutated_file, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertTrue(
+            any("page range 1-1 != expected 2-2" in e for e in errors),
+            f"Expected in-range page error, got: {errors}",
+        )
+
+    def test_43_cross_page_paragraph_mapping_and_truncation_rejected(self):
+        """43. Verify paragraph crossing page boundary produces page_start: 1, page_end: 2 and rejects truncation."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_cross_page_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        paras_to_add = "\n\n".join(
+            f"Addendum distinct paragraph {i} providing comprehensive operational management procedures "
+            f"for infrastructure teams to ensure seamless incident resolution and ongoing service reliability "
+            f"across enterprise platforms."
+            for i in range(4)
+        )
+        target = "## P1 Incident Acknowledgment"
+        eng_file.write_text(content.replace(target, f"{paras_to_add}\n\n{target}"), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        pdf_file = temp_pdf / "engineering" / "eng_001_v1.pdf"
+        build_pdf(pdf_file, meta, title, secs)
+
+        reader = pypdf.PdfReader(str(pdf_file))
+        self.assertGreaterEqual(len(reader.pages), 2)
+
+        out_jsonl = base_dir / "cross_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        errors = validate_chunks(out_jsonl, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertEqual(errors, [])
+
+        cross_chunks = [c for c in chunks if c["document_id"] == "ENG-001" and c["page_start"] == 1 and c["page_end"] == 2]
+        self.assertTrue(len(cross_chunks) >= 1, "Must find at least one chunk spanning pages 1 to 2")
+
+        mutated = [dict(c) for c in chunks]
+        for c in mutated:
+            if c["document_id"] == "ENG-001" and c["page_start"] == 1 and c["page_end"] == 2:
+                c["page_end"] = 1
+                break
+
+        mutated_file = base_dir / "mutated_cross.jsonl"
+        with open(mutated_file, "w", encoding="utf-8", newline="\n") as f:
+            for rec in mutated:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        errors = validate_chunks(mutated_file, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertTrue(
+            any("page range 1-1 != expected 1-2" in e for e in errors),
+            f"Expected cross-page range mismatch error, got: {errors}",
+        )
+
+    # --- Fact-to-Chunk Validation Tests (44 to 45) ---
+
+    def test_44_fact_id_assigned_to_wrong_chunk_in_same_section_rejected(self):
+        """44. Verify fact ID moved to another chunk within same section is rejected."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_fact_wrong_chunk_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        paras_to_add = "\n\n".join(
+            f"Addendum distinct paragraph {i} providing comprehensive operational management procedures "
+            f"and incident handling guidance for infrastructure teams to ensure seamless incident resolution, "
+            f"high system availability, and ongoing service reliability across all Aster Systems cloud environments "
+            f"and enterprise application platforms."
+            for i in range(6)
+        )
+        target = "<!-- fact_id: ENG001_F01 -->"
+        eng_file.write_text(content.replace(target, f"{paras_to_add}\n\n{target}"), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        build_pdf(temp_pdf / "engineering" / "eng_001_v1.pdf", meta, title, secs)
+
+        out_jsonl = base_dir / "split_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        errors = validate_chunks(out_jsonl, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertEqual(errors, [])
+
+        s02_chunks = [c for c in chunks if c["document_id"] == "ENG-001" and c["section_id"] == "S02"]
+        self.assertGreaterEqual(len(s02_chunks), 2)
+        c_with_fact = next(c for c in s02_chunks if "ENG001_F01" in c["fact_ids"])
+        c_without_fact = next(c for c in s02_chunks if "ENG001_F01" not in c["fact_ids"])
+
+        mutated = [dict(c) for c in chunks]
+        for c in mutated:
+            if c["chunk_id"] == c_with_fact["chunk_id"]:
+                c["fact_ids"] = [fid for fid in c["fact_ids"] if fid != "ENG001_F01"]
+            elif c["chunk_id"] == c_without_fact["chunk_id"]:
+                c["fact_ids"] = sorted(c["fact_ids"] + ["ENG001_F01"])
+
+        mutated_file = base_dir / "mutated_fact_chunk.jsonl"
+        with open(mutated_file, "w", encoding="utf-8", newline="\n") as f:
+            for rec in mutated:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        errors = validate_chunks(mutated_file, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertTrue(
+            any("ENG001_F01" in e for e in errors),
+            f"Expected fact-to-chunk assignment error, got: {errors}",
+        )
+
+    def test_45_fact_paragraph_altered_or_missing_rejected(self):
+        """45. Verify fact ID with altered or missing factual paragraph text is rejected."""
+        mutated = [dict(c) for c in self.chunks]
+        c_s02 = next(c for c in mutated if c["document_id"] == "ENG-001" and c["section_id"] == "S02")
+        self.assertIn("10 minutes", c_s02["text"])
+        c_s02["text"] = c_s02["text"].replace("10 minutes", "99 minutes")
+
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(
+            any("ENG001_F01" in e or "does not match PDF text" in e for e in errors),
+            f"Expected fact paragraph mismatch error, got: {errors}",
+        )
+
+    # --- Record Ordering Tests (46 to 49) ---
+
+    def test_46_ordering_documents_swapped_rejected(self):
+        """46. Verify swapping two documents in JSONL order fails validation."""
+        mutated = [dict(c) for c in self.chunks]
+        eng001_chunks = [c for c in mutated if c["document_id"] == "ENG-001"]
+        eng002_chunks = [c for c in mutated if c["document_id"] == "ENG-002"]
+        other_chunks = [c for c in mutated if c["document_id"] not in ("ENG-001", "ENG-002")]
+
+        reordered = eng002_chunks + eng001_chunks + other_chunks
+        temp_jsonl = self._create_temp_jsonl_copy(reordered)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(
+            any("out of order" in e.lower() or "first document" in e.lower() for e in errors),
+            f"Expected document ordering error, got: {errors}",
+        )
+
+    def test_47_ordering_sections_swapped_rejected(self):
+        """47. Verify swapping two sections in JSONL order fails validation."""
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0], mutated[1] = mutated[1], mutated[0]
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(
+            any("section" in e.lower() and "out of order" in e.lower() or "first section" in e.lower() for e in errors),
+            f"Expected section ordering error, got: {errors}",
+        )
+
+    def test_48_ordering_chunks_swapped_in_split_section_rejected(self):
+        """48. Verify swapping chunks within a multi-chunk section fails validation."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_swap_chunks_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        content = eng_file.read_text(encoding="utf-8")
+        paras_to_add = "\n\n".join(
+            f"Addendum distinct paragraph {i} providing comprehensive operational management procedures "
+            f"and incident handling guidance for infrastructure teams to ensure seamless incident resolution, "
+            f"high system availability, and ongoing service reliability across all Aster Systems cloud environments "
+            f"and enterprise application platforms."
+            for i in range(6)
+        )
+        target = "## P1 Incident Acknowledgment"
+        eng_file.write_text(content.replace(target, f"{paras_to_add}\n\n{target}"), encoding="utf-8")
+
+        meta, title, secs = load_source_document(eng_file)
+        build_pdf(temp_pdf / "engineering" / "eng_001_v1.pdf", meta, title, secs)
+
+        out_jsonl = base_dir / "split_chunks.jsonl"
+        chunks = ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=out_jsonl)
+
+        mutated = [dict(c) for c in chunks]
+        mutated[0], mutated[1] = mutated[1], mutated[0]
+
+        mutated_file = base_dir / "mutated_swap.jsonl"
+        with open(mutated_file, "w", encoding="utf-8", newline="\n") as f:
+            for rec in mutated:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        errors = validate_chunks(mutated_file, pdf_dir_path=temp_pdf, source_dir_path=temp_src, spec_dir_path=self.spec_dir)
+        self.assertTrue(
+            any("chunk_index" in e for e in errors),
+            f"Expected chunk_index ordering error, got: {errors}",
+        )
+
+    def test_49_ordering_duplicate_or_missing_chunk_index_rejected(self):
+        """49. Verify duplicate or missing chunk index fails validation."""
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0]["chunk_index"] = 2
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(
+            any("chunk_index" in e or "Chunk ID" in e for e in errors),
+            f"Expected chunk index error, got: {errors}",
+        )
+
+    # --- PDF Non-Fallback, Schema, Protection, and Determinism Tests (50 to 54) ---
+
+    def test_50_pdf_extraction_cannot_fallback_to_markdown(self):
+        """50. Verify PDF ingestion fails when PDF content is missing/altered and does not recreate from Markdown."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_no_fallback_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        temp_src = base_dir / "source"
+        temp_pdf = base_dir / "pdfs"
+        shutil.copytree(self.source_dir, temp_src)
+        shutil.copytree(self.pdf_dir, temp_pdf)
+
+        eng_file = temp_src / "engineering" / "eng_001.md"
+        meta, title, secs = load_source_document(eng_file)
+
+        # Build PDF with altered content that does not match source Markdown
+        sec0_title, sec0_paras = secs[0]
+        altered_paras = ["Altered unapproved content that does not match Markdown source."] + sec0_paras[1:]
+        altered_secs = [(sec0_title, altered_paras)] + secs[1:]
+
+        pdf_path = temp_pdf / "engineering" / "eng_001_v1.pdf"
+        build_pdf(pdf_path, meta, title, altered_secs)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            ingest_all_pdfs(source_dir_path=temp_src, pdf_dir_path=temp_pdf, output_file_path=base_dir / "out.jsonl")
+        self.assertTrue(
+            "does not match" in str(ctx.exception).lower() or "missing" in str(ctx.exception).lower(),
+            f"Expected failure without falling back to Markdown, got: {ctx.exception}",
+        )
+
+    def test_51_malformed_schema_types_null_and_boolean_pages_rejected(self):
+        """51. Verify incorrect field types, null values, boolean page numbers, and extra/missing fields fail safely."""
+        # 1. Boolean page_start
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0]["page_start"] = True
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(any("page_start" in e and "integer" in e for e in errors))
+
+        # 2. Null text
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0]["text"] = None
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(any("cannot be null" in e for e in errors))
+
+        # 3. Non-list fact_ids
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0]["fact_ids"] = "ENG001_F01"
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(any("fact_ids" in e and "list" in e for e in errors))
+
+        # 4. Extra field
+        mutated = [dict(c) for c in self.chunks]
+        mutated[0]["unauthorized_field"] = "malicious"
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(any("Unexpected extra field" in e for e in errors))
+
+        # 5. Missing required field
+        mutated = [dict(c) for c in self.chunks]
+        del mutated[0]["pdf_sha256"]
+        temp_jsonl = self._create_temp_jsonl_copy(mutated)
+        errors = validate_chunks(temp_jsonl)
+        self.assertTrue(any("Missing required field" in e for e in errors))
+
+    def test_52_duplicate_json_keys_and_invalid_utf8_rejected(self):
+        """52. Verify duplicate JSON keys and invalid UTF-8 are rejected with clear validation errors."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_dup_keys_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        # 1. Duplicate JSON key
+        dup_file = base_dir / "dup_keys.jsonl"
+        valid_rec = dict(self.chunks[0])
+        line = json.dumps(valid_rec)
+        dup_line = line[:-1] + ', "chunk_id": "duplicate_id"}\n'
+        dup_file.write_text(dup_line, encoding="utf-8")
+        errors = validate_chunks(dup_file)
+        self.assertTrue(
+            any("Duplicate key" in e for e in errors),
+            f"Expected duplicate key error, got: {errors}",
+        )
+
+        # 2. Invalid UTF-8
+        bad_utf8_file = base_dir / "bad_utf8.jsonl"
+        bad_utf8_file.write_bytes(b"\x80\x81\xff\xfe\x00")
+        errors = validate_chunks(bad_utf8_file)
+        self.assertTrue(
+            any("UTF-8" in e for e in errors),
+            f"Expected UTF-8 error, got: {errors}",
+        )
+
+    def test_53_publication_failure_preserves_existing_output(self):
+        """53. Verify ingestion failure preserves existing output file byte-for-byte."""
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_pres_pub_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+        target_file = base_dir / "v1_chunks.jsonl"
+        original_bytes = b"PRESERVED_ORIGINAL_CORPUS_DATA"
+        target_file.write_bytes(original_bytes)
+
+        temp_src = base_dir / "bad_source"
+        temp_src.mkdir()
+
+        with self.assertRaises(Exception):
+            ingest_all_pdfs(source_dir_path=temp_src, output_file_path=target_file)
+
+        self.assertEqual(target_file.read_bytes(), original_bytes)
+
+    def test_54_repeat_generation_deterministic_hash(self):
+        """54. Verify repeat generation produces byte-for-byte identical output matching baseline SHA-256."""
+        baseline_sha = "37fe6ff5167e2b01b78ebf1daf773a62d56f76449e82583fc5f230485064113e"
+        base_dir = _get_temp_dir_on_same_volume(self.chunks_file, prefix="astercite_repeat_hash_")
+        self.addCleanup(shutil.rmtree, base_dir, ignore_errors=True)
+
+        out1 = base_dir / "out1.jsonl"
+        out2 = base_dir / "out2.jsonl"
+        ingest_all_pdfs(output_file_path=out1)
+        ingest_all_pdfs(output_file_path=out2)
+
+        h1 = hashlib.sha256(out1.read_bytes()).hexdigest()
+        h2 = hashlib.sha256(out2.read_bytes()).hexdigest()
+        self.assertEqual(h1, baseline_sha)
+        self.assertEqual(h2, baseline_sha)
+        self.assertEqual(h1, h2)
+
 
 if __name__ == "__main__":
     unittest.main()

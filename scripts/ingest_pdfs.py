@@ -444,15 +444,29 @@ def ingest_all_pdfs(
             # Extract clean PDF body text per page
             page_texts, num_pages = extract_pdf_page_texts(pdf_file, doc_id, src_title, first_sec_title)
 
-            # Verify that PDF body text contains all source sections and paragraphs exactly
-            full_pdf_body = " ".join(" ".join(page_texts).split())
+            # Build combined PDF text and page boundary ranges
+            norm_pages = [" ".join(pt.split()) for pt in page_texts]
+            combined_pdf_text = " ".join(norm_pages)
+
+            page_ranges: list[tuple[int, int]] = []
+            curr_offset = 0
+            for np in norm_pages:
+                p_start_offset = curr_offset
+                p_end_offset = curr_offset + len(np)
+                page_ranges.append((p_start_offset, p_end_offset))
+                curr_offset = p_end_offset + 1
+
+            def get_page_number(offset: int) -> int:
+                for p_idx, (s, e) in enumerate(page_ranges, start=1):
+                    if s <= offset <= e:
+                        return p_idx
+                return len(page_ranges)
+
             cursor = 0
 
             # Map section IDs and outlines
             sec_outline_map = {s["section_id"]: s for s in outline["sections"]}
             sec_ids_ordered = [s["section_id"] for s in outline["sections"]]
-
-            curr_search_page = 1
 
             for sec_idx, sec_id in enumerate(sec_ids_ordered):
                 sec_outline = sec_outline_map[sec_id]
@@ -460,9 +474,9 @@ def ingest_all_pdfs(
                 sec_expected_facts = sec_outline.get("fact_ids", [])
 
                 # Verify section title in PDF body
-                pos_st = full_pdf_body.find(sec_title, cursor)
+                pos_st = combined_pdf_text.find(sec_title, cursor)
                 if pos_st == -1:
-                    raise RuntimeError(f"Section title '{sec_title}' missing in extracted PDF text for {doc_id}")
+                    raise RuntimeError(f"Section title '{sec_title}' missing in extracted PDF text for {doc_id} at offset {cursor}")
                 cursor = pos_st + len(sec_title)
 
                 # Get matching source paragraphs for this section
@@ -470,17 +484,20 @@ def ingest_all_pdfs(
                 if src_sec_title != sec_title:
                     raise ValueError(f"Outline section title '{sec_title}' != source title '{src_sec_title}' for {doc_id}")
 
-                # Locate paragraphs on pages and verify text
+                # Locate paragraphs on pages and verify text explicitly from PDF
                 para_page_info: list[tuple[str, int, int]] = []
                 for para in src_paras:
-                    pos_p = full_pdf_body.find(para, cursor)
+                    pos_p = combined_pdf_text.find(para, cursor)
                     if pos_p == -1:
-                        raise RuntimeError(f"Paragraph '{para[:30]}...' missing in extracted PDF text for {doc_id}")
-                    cursor = pos_p + len(para)
+                        raise RuntimeError(f"Paragraph '{para[:40]}...' missing or altered in extracted PDF text for {doc_id} at offset {cursor}")
+                    p_span = combined_pdf_text[pos_p : pos_p + len(para)]
+                    if p_span != para:
+                        raise RuntimeError(f"Extracted PDF span does not match Markdown paragraph for {doc_id}")
 
-                    p_start, p_end = locate_paragraph_pages(para, page_texts, curr_search_page)
-                    curr_search_page = p_start
-                    para_page_info.append((para, p_start, p_end))
+                    p_start = get_page_number(pos_p)
+                    p_end = get_page_number(pos_p + len(para) - 1)
+                    cursor = pos_p + len(para)
+                    para_page_info.append((p_span, p_start, p_end))
 
                 # Section-aware paragraph-packed chunking (MAX_CHUNK_WORDS = 220)
                 sec_chunks_paras: list[list[tuple[str, int, int]]] = []
@@ -545,6 +562,11 @@ def ingest_all_pdfs(
                         "team_lead_departments": team_lead_departments,
                     }
                     all_chunks.append(record)
+
+            # Confirm no extra unauthorized text in PDF body
+            remainder = combined_pdf_text[cursor:].strip()
+            if remainder:
+                raise RuntimeError(f"Unauthorized extra text found in PDF for {doc_id}: '{remainder[:50]}...'")
 
         # Step 6: Write JSONL to staging file (UTF-8, LF newlines)
         with open(staging_file, "w", encoding="utf-8", newline="\n") as f:
